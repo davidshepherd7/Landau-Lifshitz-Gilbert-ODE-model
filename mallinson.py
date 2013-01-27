@@ -12,42 +12,35 @@ class MallinsonSolver(object):
     See [Mallinson2000, doi: 10.1109/20.875251] for details.
     """
 
-    def __init__(self, _alpha = 0.5, _gamma = 1.0, _H = 2.0,
-                 _Hk = 0.0, _starting_polar_angle = pi/18):
-        self.alpha = _alpha
-        self.gamma = _gamma
-        self.H = _H  # Field in -z direction
-        self.Hk = _Hk
-        self.Ms = 1.0
-        self.starting_polar_angle = _starting_polar_angle
+    def __init__(self, magParameters = None,
+                 starting_polar_angle = pi/18):
 
-    def parameter_string(self):
-        """Return a string representation of the parameters."""
-        return "alpha = "+ str(self.alpha) \
-          + ", gamma = "+ str(self.gamma) +",\n" \
-          + "H = "+ str(self.H) \
-          + ", Hk = "+ str(self.Hk) \
-          + " and start angle = "+ str(self.starting_polar_angle)
+        if magParameters is not None:
+            self.mP = magParameters
+        else:
+            self.mP = utils.MagParameters()
 
-    def llg_parameters(self):
-        """Return a dictionary of parameters."""
-        return { 'alpha' : self.alpha,
-                 'gamma' : self.gamma,
-                 'H' : self.H,
-                 'Hk' : self.Hk,
-                 'Ms' : self.Ms}
+        self.starting_polar_angle = starting_polar_angle
+
+    # def parameter_string(self):
+    #     """Return a string representation of the parameters."""
+    #     return "alpha = "+ str(self.alpha) \
+    #       + ", gamma = "+ str(self.gamma) +",\n" \
+    #       + "H = "+ str(self.H) \
+    #       + ", Hk = "+ str(self.Hk) \
+    #       + " and start angle = "+ str(self.starting_polar_angle)
 
     def time(self, polar_angle):
         """Calculate the time taken to switch from starting_polar_angle to
         polar_angle with the stored parameter set."""
         # Cache some things to simplify the expressions later
-        H = self.H
-        Hk = self.Hk
+        H = self.mP.H()
+        Hk = self.mP.Hk
         p_start = self.starting_polar_angle
         p_now = polar_angle
 
         # Calculate the various parts of the expression
-        prefactor = ((self.alpha**2 + 1)/(self.gamma * self.alpha)) \
+        prefactor = ((self.mP.alpha**2 + 1)/(self.mP.gamma * self.mP.alpha)) \
                       * (1.0 / (H**2 - Hk**2))
 
         a = H * log( tan(p_now/2) / tan(p_start/2) )
@@ -66,7 +59,7 @@ class MallinsonSolver(object):
             if a < 0: a+= 2*pi
             return a
 
-        no_range_azi = (-1/self.alpha) * log(tan(polar_angle/2)/
+        no_range_azi = (-1/self.mP.alpha) * log(tan(polar_angle/2)/
                                              tan(self.starting_polar_angle/2))
         return azi_into_range(no_range_azi)
 
@@ -107,15 +100,15 @@ import energy
 class MallinsonSolverCheckerBase():
     """Base class to define the test functions but not actually run them."""
 
-    def base_init(self, alpha=0.5, Hk=0.0, steps=1000,
+    def base_init(self, magParameters = None, steps = 1000,
                   starting_polar_angle = pi/18):
 
-        self.mSolver = MallinsonSolver(_alpha=alpha, _Hk=Hk,
-                                       _starting_polar_angle=starting_polar_angle)
+        self.mSolver = MallinsonSolver(magParameters,
+                                       starting_polar_angle=starting_polar_angle)
         (self.sphs, self.times) = self.mSolver.generate_dynamics(steps = steps)
 
         def partial_energy(sph):
-            energy.llg_state_energy(sph, self.mSolver.llg_parameters)
+            energy.llg_state_energy(sph, self.mSolver.mP)
         self.energys = map(partial_energy, self.sphs)
 
     # Monotonically increasing time
@@ -127,23 +120,28 @@ class MallinsonSolverCheckerBase():
     def test_azimuthal_in_range(self):
         for sph in self.sphs: utils.assertAziInRange(sph)
 
-    # Monotonically decreasing azimuthal angle except for jumps at
-    # 2*pi. Closeness of point to 2*pi depends on time discretisation so we
-    # give it some space, seems to work.
+    # Monotonically decreasing azimuthal angle except for jumps at 2*pi.
     def test_increasing_azimuthal(self):
         for a, b in zip(self.sphs, self.sphs[1:]):
             assert(a.azi > b.azi or
-                   (b.azi + a.azi - 2 * pi) < 3.0/(len(self.sphs)))
+                   (a.azi - 2*pi <= 0.0 and b.azi >= 0.0))
 
+    def test_damping_self_consistency(self):
+        a2s = energy.recompute_alpha_list(self.sphs, self.times,
+                                          self.mSolver.mP)
 
-    def test_mallinson_self_consistency(self):
-        a2 = energy.recomputed_alpha(self.sphs[0], self.sphs[-1],
-                                     self.times[0], self.times[-1],
-                                     self.mSolver.llg_parameters())
-        assert(abs(a2 - self.mSolver.alpha) < 1e-6)
+        # Use 1/length as error estimate because it's proportional to dt.
+        def check_alpha_ok(a2):
+            return abs(a2 - self.mSolver.mP.alpha) < 1.0/len(self.times)
+        assert(all(map(check_alpha_ok, a2s)))
 
-    def test_non_negative_energy(self):
-        assert(all(e > 0 for e in self.energys))
+    # This is an important test. If this works then it is very likely that
+    # the Mallinson calculator, the energy calculations and most of the
+    # utils (so far) are all working. So tag it as "core".
+    test_damping_self_consistency.core = True
+
+    # def test_non_negative_energy(self):
+    #     assert(all(e > 0 for e in self.energys))
 
 
 # Now run the tests with various intial settings (tests are inherited from
@@ -154,7 +152,15 @@ class TestMallinsonDefaults(MallinsonSolverCheckerBase, unittest.TestCase):
 
 class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
     def setUp(self):
-        self.base_init(Hk = 0.9)
+        mP = utils.MagParameters()
+        mP.Hk = 1.2
+        self.base_init(mP)
+
+class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
+    def setUp(self):
+        mP = utils.MagParameters()
+        mP.alpha = 0.1
+        self.base_init(mP, steps=10000)
 
 class TestMallinsonStartAngle(MallinsonSolverCheckerBase,
                                      unittest.TestCase):

@@ -2,6 +2,8 @@
 import collections
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 
+import scipy as sp
+import scipy.linalg
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -23,10 +25,11 @@ def unzip(iterable_of_iterables):
 # Testing helpers
 # ============================================================
 
-# Some useful asserts
+# Some useful asserts. Use the assert command in each to make sure we get
+# useful output from nose -d.
 def almostEqual(a,b): return abs(a - b) < 1e-9
 def assertAlmostEqual(a,b): assert(almostEqual(a,b))
-def assertAlmostZero(a): assertAlmostEqual(a,0.0)
+def assertAlmostZero(a): assert(abs(a) < 1e-9)
 def assertTupleAlmostEqual(tup1, tup2): map(assertAlmostEqual, tup1, tup2)
 
 # Spherical polar coordinates asserts
@@ -110,6 +113,24 @@ def plot_polar_vs_time(sphs, times, title = 'Polar angle vs time'):
 
     return fig
 
+
+class MagParameters():
+
+    def __init__(self):
+        self.alpha = 1.0
+        self.gamma = 1.0
+        self.Hvec = (0.0, 0.0, -2.0)
+        self.Hk = 0.0
+        self.Ms = 1.0
+        self.mu0 = 1.0
+
+    def H(self):
+        return sp.linalg.norm(self.Hvec, ord=2)
+
+    # Hk = (2* K1) / (mu0* Ms) ??ds maybe....
+    #??ds probably wrong!
+    def K1(self):
+        return self.Hk * self.mu0 * self.Ms / 2
 
 # Test this file's code
 # ============================================================
