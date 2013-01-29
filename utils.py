@@ -27,9 +27,9 @@ def unzip(iterable_of_iterables):
 
 # Some useful asserts. Use the assert command in each to make sure we get
 # useful output from nose -d.
-def almostEqual(a,b): return abs(a - b) < 1e-9
-def assertAlmostEqual(a,b): assert(almostEqual(a,b))
-def assertAlmostZero(a): assert(abs(a) < 1e-9)
+def almostEqual(a, b, tol = 1e-9): return abs(a - b) < tol
+def assertAlmostEqual(a, b, tol = 1e-9): assert(almostEqual(a, b, tol))
+def assertAlmostZero(a, tol = 1e-9): assert(abs(a) < tol)
 def assertTupleAlmostEqual(tup1, tup2): map(assertAlmostEqual, tup1, tup2)
 
 # Spherical polar coordinates asserts
