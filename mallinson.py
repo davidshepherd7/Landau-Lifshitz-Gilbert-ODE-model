@@ -5,89 +5,78 @@ import matplotlib.pyplot as plt
 
 import utils
 
-class MallinsonSolver(object):
-    """Calculate analytical solutions to the zero dimensional LLG when H is
-    aligned with the negative z direction and z is the easy axis.
 
-    See [Mallinson2000, doi: 10.1109/20.875251] for details.
+def calculate_switching_time(magnetic_parameters, p_start, p_now):
+    """Calculate the time taken to switch from polar angle p_start to p_now
+    with the magnetic parameters given.
     """
+    # Cache some things to simplify the expressions later
+    H = magnetic_parameters.H()
+    Hk = magnetic_parameters.Hk
+    alpha = magnetic_parameters.alpha
+    gamma = magnetic_parameters.gamma
 
-    def __init__(self, magParameters = None,
-                 starting_polar_angle = pi/18):
+    # Calculate the various parts of the expression
+    prefactor = ((alpha**2 + 1)/(gamma * alpha)) \
+                  * (1.0 / (H**2 - Hk**2))
 
-        if magParameters is not None:
-            self.mP = magParameters
-        else:
-            self.mP = utils.MagParameters()
+    a = H * log( tan(p_now/2) / tan(p_start/2) )
+    b = Hk * log( (H - Hk*cos(p_start)) /
+                  (H - Hk*cos(p_now)) )
+    c = Hk * log(sin(p_now) / sin(p_start))
 
-        self.starting_polar_angle = starting_polar_angle
+    # Put everything together
+    return prefactor * (a + b + c)
 
-    # def parameter_string(self):
-    #     """Return a string representation of the parameters."""
-    #     return "alpha = "+ str(self.alpha) \
-    #       + ", gamma = "+ str(self.gamma) +",\n" \
-    #       + "H = "+ str(self.H) \
-    #       + ", Hk = "+ str(self.Hk) \
-    #       + " and start angle = "+ str(self.starting_polar_angle)
+def calculate_azimuthal(magnetic_parameters, p_start, p_now):
+    """Calculate the azimuthal angle corresponding to switching from
+    p_start to p_now with the magnetic parameters given.
+    """
+    def azi_into_range(azi):
+        a = azi % (2*pi)
+        if a < 0: a+= 2*pi
+        return a
 
-    def time(self, polar_angle):
-        """Calculate the time taken to switch from starting_polar_angle to
-        polar_angle with the stored parameter set."""
-        # Cache some things to simplify the expressions later
-        H = self.mP.H()
-        Hk = self.mP.Hk
-        p_start = self.starting_polar_angle
-        p_now = polar_angle
+    alpha = magnetic_parameters.alpha
 
-        # Calculate the various parts of the expression
-        prefactor = ((self.mP.alpha**2 + 1)/(self.mP.gamma * self.mP.alpha)) \
-                      * (1.0 / (H**2 - Hk**2))
+    no_range_azi = (-1/alpha) * log(tan(p_now/2)/
+                                    tan(p_start/2))
+    return azi_into_range(no_range_azi)
 
-        a = H * log( tan(p_now/2) / tan(p_start/2) )
-        b = Hk * log( (H - Hk*cos(p_start)) /
-                      (H - Hk*cos(p_now)) )
-        c = Hk * log(sin(p_now) / sin(p_start))
+def generate_dynamics(magnetic_parameters,
+                      start_angle = pi/18,
+                      end_angle = 17*pi/18,
+                      steps = 1000):
+    """Generate a list of polar angles then return a list of corresponding
+    m directions (in spherical polar coordinates) and switching times.
+    """
+    mp = magnetic_parameters
 
-        # Put everything together
-        return prefactor * (a + b + c)
+    pols = sp.linspace(start_angle, end_angle, steps)
+    azis = [calculate_azimuthal(mp, start_angle, p) for p in pols]
+    rs = [1.0] * len(pols) # r is always 1.0
 
-    def azi(self, polar_angle):
-        """Calculate the azimuthal angle corresponding to switching from
-        starting_polar_angle to polar angle with the stored parameter set."""
-        def azi_into_range(azi):
-            a = azi % (2*pi)
-            if a < 0: a+= 2*pi
-            return a
+    sphs = map(utils.SphPoint, rs, azis, pols) # wrap into a named tuple
+    times = [calculate_switching_time(mp, start_angle, p) for p in pols]
 
-        no_range_azi = (-1/self.mP.alpha) * log(tan(polar_angle/2)/
-                                             tan(self.starting_polar_angle/2))
-        return azi_into_range(no_range_azi)
+    return (sphs, times)
 
-    def generate_dynamics(self, end_angle = 17*pi/18, steps = 1000):
-        """Generate a list of polar angles then return a list of
-        corresponding m directions spherical polar coordinates and
-        switching times."""
+def plot_dynamics(magnetic_parameters,
+                  start_angle = pi/18,
+                  end_angle = 17*pi/18,
+                  steps = 1000):
 
-        pols = sp.linspace(self.starting_polar_angle, end_angle, steps)
-        azis = map(self.azi, pols)
-        rs = [1] * len(pols)
+    sphs, times = generate_dynamics(magnetic_parameters, start_angle,
+                                    end_angle, steps)
 
-        sphs = map(utils.SphPoint, rs, azis, pols)
-        times = map(self.time, pols)
+    sphstitle = "Path of m for " + str(magnetic_parameters) \
+      + "\n (starting point is marked)."
+    utils.plot_sph_points(sphs, title = sphstitle)
 
-        return (sphs, times)
+    timestitle = "Polar angle vs time for " + str(magnetic_parameters)
+    utils.plot_polar_vs_time(sphs,times, title=timestitle)
 
-    def plot_dynamics(self, end_angle = 17*pi/18, steps = 1000):
-        sphs, times = self.generate_dynamics(end_angle, steps)
-
-        sphstitle = "Path of m for " + self.parameter_string() \
-          + "\n (starting point is marked)."
-        utils.plot_sph_points(sphs, title = sphstitle)
-
-        timestitle = "Polar angle vs time for " + self.parameter_string()
-        utils.plot_polar_vs_time(sphs,times, title=timestitle)
-
-        plt.show()
+    plt.show()
 
 
 
@@ -101,14 +90,20 @@ class MallinsonSolverCheckerBase():
     """Base class to define the test functions but not actually run them."""
 
     def base_init(self, magParameters = None, steps = 1000,
-                  starting_polar_angle = pi/18):
+                  p_start = pi/18):
 
-        self.mSolver = MallinsonSolver(magParameters,
-                                       starting_polar_angle=starting_polar_angle)
-        (self.sphs, self.times) = self.mSolver.generate_dynamics(steps = steps)
+        # self.mSolver = MallinsonSolver(magParameters,
+        #                                p_start=p_start)
+
+        if magParameters is None:
+            self.mP = utils.MagParameters()
+        else:
+            self.mP = magParameters
+
+        (self.sphs, self.times) = generate_dynamics(self.mP, steps = steps)
 
         def partial_energy(sph):
-            energy.llg_state_energy(sph, self.mSolver.mP)
+            energy.llg_state_energy(sph, self.mP)
         self.energys = map(partial_energy, self.sphs)
 
     # Monotonically increasing time
@@ -128,11 +123,11 @@ class MallinsonSolverCheckerBase():
 
     def test_damping_self_consistency(self):
         a2s = energy.recompute_alpha_list(self.sphs, self.times,
-                                          self.mSolver.mP)
+                                          self.mP)
 
         # Use 1/length as error estimate because it's proportional to dt.
         def check_alpha_ok(a2):
-            return abs(a2 - self.mSolver.mP.alpha) < 1.0/len(self.times)
+            return abs(a2 - self.mP.alpha) < 1.0/len(self.times)
         assert(all(map(check_alpha_ok, a2s)))
 
     # This is an important test. If this works then it is very likely that
@@ -165,4 +160,4 @@ class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
 class TestMallinsonStartAngle(MallinsonSolverCheckerBase,
                                      unittest.TestCase):
     def setUp(self):
-        self.base_init(starting_polar_angle = pi/2)
+        self.base_init(p_start = pi/2)

@@ -132,6 +132,15 @@ class MagParameters():
     def K1(self):
         return self.Hk * self.mu0 * self.Ms / 2
 
+    def __repr__(self):
+        """Return a string representation of the parameters.
+        """
+        return "alpha = "+ str(self.alpha) \
+          + ", gamma = "+ str(self.gamma) +",\n" \
+          + "H = "+ str(self.Hvec) \
+          + ", Hk = "+ str(self.Hk) \
+          + ", Ms = "+ str(self.Ms)
+
 # Test this file's code
 # ============================================================
 
