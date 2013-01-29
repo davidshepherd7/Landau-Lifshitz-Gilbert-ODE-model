@@ -23,28 +23,35 @@ import utils
 # Jacobian, it's not very accurate.
 
 def odeint(func, y0, t, dt = None, method = 'bdf2'):
+    """
 
-    if method.lower() == 'builtin':
-        assert(dt is None)
-        raise NotImplementedError
-        (ys, infodict) = sp.integrate.odeint(func, y0, t, full_output=True)
-        return ys, infodict['tcurr']
+    func: should be a function of time, the previous y values and dydt
+    which gives a residual.
 
+    e.g. dy/dt = -y
+
+    becomes
+
+    def func(t, y, dydt): return dydt + t
+    """
+    # Don't deal with adaptive stuff yet.
+    if dt is None:
+        raise NotImplementedError("Adaptive timestepping not implemented.")
+
+    if method.lower() == 'bdf2':
+        return bdf(func, y0, t, dt = dt, order = 2)
+    elif method.lower() == 'bdf1':
+        return bdf(func, y0, t, dt = dt, order = 1)
+    elif method.lower() == 'midpoint':
+        return midpoint(func, y0, t, dt = dt)
     else:
-        # Don't deal with adaptive stuff yet.
-        assert(dt is not None)
-
-        if method.lower() == 'bdf2':
-            return bdf(func, y0, t, dt = dt, order = 2)
-        elif method.lower() == 'bdf1':
-            return bdf(func, y0, t, dt = dt, order = 1)
-        elif method.lower() == 'midpoint':
-            return midpoint(func, y0, t, dt = dt)
-        else:
-            raise ValueError("Method "+method+" not recognised.")
+        raise ValueError("Method "+method+" not recognised.")
 
 
 def bdf_coeffs(order, name):
+    """Get coefficients for bdf methods. From Atkinson, Numerical Solution
+    of Ordinary Differential Equations.
+    """
     b_cs = [{'beta' : 1.0, 'alphas' : [1.0]},
             {'beta' : 2.0/3, 'alphas' : [4.0/3, -1.0/3]},
             {'beta': 6.0/11, 'alphas' : [18.0/11 -9.0/11, 2.0/11]},]
@@ -72,13 +79,18 @@ def bdf(func, y0, tmax, dt, order):
     while ts[-1] < tmax:
 
         # Get most recent order+1 values of y
-        y_rev = sp.array(ys[-1 : -1*(order+1) : -1])
+        y_prev = sp.array(ys[-1 : -1*(order+1) : -1])
 
         # Form the function to minimise
         def discretised_residual_func(ynp1):
-            past_term = sum(map(op.mul, y_rev, alphas))
-            future_term = dt * beta * sp.array(func(ts[-1] + dt, ynp1)) - ynp1
-            return past_term + future_term
+            """Compute the residual from the given func, current time,
+            previous y values and the input (an "ansatz" for y at the next
+            time).
+            """
+            # ??ds not sure why there is a -1 factor here...
+            dydt = -1 * (sum(map(op.mul, y_prev, alphas)) - ynp1) / (beta * dt)
+            tnp1 = ts[-1] + dt
+            return func(tnp1, ynp1, dydt)
 
         # Solve the system using the previous y as an initial guess
         ynp1 = newton_solve(discretised_residual_func,
@@ -103,13 +115,18 @@ def midpoint(func, y0, tmax, dt):
     while ts[-1] < tmax:
 
         # Form the function to minimise
-        def midpoint_discretised_residual_func(ynp1):
+        def discretised_residual_func(ynp1):
+            """Compute the residual from the given func, current time,
+            previous y values and the input (an "ansatz" for y at the next
+            time).
+            """
             ymid = (ynp1 + ys[-1])/2.0
             tmid = ts[-1] + (dt/2.0)
-            return func(tmid, ymid) + (ys[-1] - ynp1)/dt
+            dydt = (ynp1 - ys[-1])/dt
+            return func(tmid, ymid, dydt)
 
         # Solve the system using the previous y as an initial guess
-        ynp1 = newton_solve(midpoint_discretised_residual_func,
+        ynp1 = newton_solve(discretised_residual_func,
                             ys[-1], tol=1e-8)
 
         # Update results
@@ -203,38 +220,43 @@ def test_scalar_newton_solve():
 
 
 def test_exp_timesteppers():
+
+    # Auxilary checking function
+    def check_exp_timestepper(method, tol):
+        def residual(t, y, dydt): return y - dydt
+        tmax = 1.0
+        dt = 0.001
+        ts, ys = odeint(residual, [exp(0.0)], tmax, dt = dt,
+                         method = method)
+        utils.assertAlmostEqual(ys[-1][0], exp(tmax), tol)
+
+    # List of test parameters
     methods = [('bdf2', 1e-5),
                ('bdf1', 1e-2), # First order method...
-               ('midpoint', 1e-5),
-#               ('builtin', [1e-4, 1e-4])
-]
+               ('midpoint', 1e-5),]
+
+    # Generate tests
     for meth, tol in methods:
         yield check_exp_timestepper, meth, tol
 
 
-def check_exp_timestepper(method, tol):
-    def dydt(t,y): return y
-    tmax = 1.0
-    dt = 0.001
-    ts, ys = odeint(dydt, [exp(0.0)], tmax, dt = dt,
-                     method = method)
-    utils.assertAlmostEqual(ys[-1][0], exp(tmax), tol)
-
-
 def test_vector_timesteppers():
+
+    # Auxilary checking function
+    def check_vector_timestepper(method, tol):
+        def residual(t, y, dydt):
+            return sp.array([-1 * sin(t), y[1]]) - dydt
+        tmax = 1.0
+        ts, ys = odeint(residual, [[cos(0.0), exp(0.0)]], tmax, dt = 0.001,
+                        method = method)
+        utils.assertAlmostEqual(ys[-1][0], cos(tmax), tol[0])
+        utils.assertAlmostEqual(ys[-1][1], exp(tmax), tol[1])
+
+    # List of test parameters
     methods = [('bdf2', [1e-4, 1e-4]),
                ('bdf1', [1e-2, 1e-2]), # First order methods suck...
-               ('midpoint', [1e-4, 1e-4]),
-               #('builtin', [1e-4, 1e-4])
-               ]
+               ('midpoint', [1e-4, 1e-4]),]
+
+    # Generate tests
     for meth, tol in methods:
         yield check_vector_timestepper, meth, tol
-
-
-def check_vector_timestepper(method, tol):
-    def dydt(t,y): return sp.array([-1 * sin(t), y[1]])
-    tmax = 1.0
-    ts, ys = odeint(dydt, [[cos(0.0), exp(0.0)]], tmax, dt = 0.001,
-                    method = method)
-    utils.assertAlmostEqual(ys[-1][0], cos(tmax), tol[0])
-    utils.assertAlmostEqual(ys[-1][1], exp(tmax), tol[1])
