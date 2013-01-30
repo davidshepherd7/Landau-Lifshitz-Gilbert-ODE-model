@@ -3,6 +3,7 @@ from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 import scipy as sp
 import scipy.integrate
 import operator as op
+from scipy.optimize import newton_krylov
 
 import utils
 
@@ -19,8 +20,6 @@ import utils
 # Need to add option to input additional starting value, I think the extra
 # lower order step is costing us accuracy.
 
-# Possibly need to do something better with the finite differenced
-# Jacobian, it's not very accurate.
 
 def odeint(func, y0, tmax, dt = None, method = 'bdf2'):
     """
@@ -93,9 +92,10 @@ def bdf(func, y0, tmax, dt, order):
             return func(tnp1, ynp1, dydt)
 
         # Solve the system using the previous y as an initial guess
-        ynp1 = newton_solve(discretised_residual_func,
-                            ys[-1], tol=1e-8)
+        ynp1 = newton_krylov(discretised_residual_func, ys[-1])
 
+        print
+        print
         # Update results
         ys.append(ynp1)
         ts.append(ts[-1] + dt)
@@ -128,8 +128,7 @@ def midpoint(func, y0, tmax, dt):
             return func(tmid, ymid, dydt)
 
         # Solve the system using the previous y as an initial guess
-        ynp1 = newton_solve(discretised_residual_func,
-                            ys[-1], tol=1e-8)
+        ynp1 = newton_krylov(discretised_residual_func, ys[-1])
 
         # Update results
         ys.append(ynp1)
@@ -137,89 +136,10 @@ def midpoint(func, y0, tmax, dt):
 
     return ts, ys
 
-def newton_solve(func, x0, tol=1e-8):
-    """Find x such that max(func(x)) < tol. Optionally specify an initial
-     guess x0, otherwise zeroes will be used.
-
-    E.g. if f(x) = residuals then the result is the solution after a timestep.
-    """
-
-    # Make sure this is an array otherwise solvers will fail
-    residual = sp.array(func(x0), ndmin = 1)
-    max_res = sp.amax(abs(residual))
-
-    # Initialise x, must be an array so that += works
-    x = sp.array(x0, ndmin = 1)
-
-    while max_res > tol:
-        # Calculate the Jacobian of f by finite differencing.
-        jacobian = fd_jacobian(func, x)
-
-        # Solve the system to get dx. We want dx such that f(x + dx) = 0
-        # (to within tol). ??ds offer other solvers?
-        dx = sp.linalg.solve(jacobian, -1 * residual)
-
-        # Update to the new and improved x
-        x += dx
-
-        # Update residual
-        residual = sp.array(func(x), ndmin = 1)
-        max_res = sp.amax(abs(residual))
-
-    return x
-
-
-def fd_jacobian(func, x):
-    # Need to make sure these are vectors with dimension 1.
-    fx = sp.array(func(x), ndmin = 1)
-    x = sp.array(x, ndmin = 1)
-
-    dx = 1e-8
-
-    # Matrix with one row for each output of f and one column for each x_j.
-    J = sp.zeros((fx.shape[0], x.shape[0]))
-
-    for j, xj in enumerate(x):
-        temp_x = x.copy() # Explicit copy otherwise we end up modifying a
-                          # "view" of x.
-        temp_x[j] += dx
-        J[:,j] = (func(temp_x) - fx) / dx
-
-    return J
-
-
     #
 
 # Testing
 # ============================================================
-
-def test_fd_jacobian():
-    def f(x): return sp.array([ x[0]**2 + x[1]**2, x[1]])
-    def J_f(x): return sp.array([[2*x[0], 2*x[1]], [0.0, 1.0]])
-    x = sp.array([3.0, 5.0])
-    J = fd_jacobian(f, x)
-    Jdiff = J - J_f(x)
-    utils.assertAlmostZero(sp.amax(Jdiff), 1e-5)
-
-
-# Check that we can solve for a vector f using the newton solve.
-def test_vector_newton_solve():
-    def f(x):
-        # From http://v8doc.sas.com/sashtml/iml/chap8/sect4.htm
-        return sp.array([x[0] + x[1] - x[0]*x[1] +2, x[0] * exp(-x[1]) -1])
-
-    x_result = newton_solve(f, sp.zeros(2))
-    x_error = sp.amax(x_result - [0.0977731, -2.325106])
-    utils.assertAlmostZero(x_error, 1e-6)
-
-
-# Check that we can solve for sqrt(4) correctly using the newton solver.
-def test_scalar_newton_solve():
-    def f(x): return x[0]**2 - 4
-    x = newton_solve(f, sp.array([1.0]))
-    x_error = x - sp.array(2,ndmin=1)
-    utils.assertAlmostZero(x_error, 1e-6)
-
 
 def test_exp_timesteppers():
 
@@ -230,7 +150,7 @@ def test_exp_timesteppers():
         dt = 0.001
         ts, ys = odeint(residual, [exp(0.0)], tmax, dt = dt,
                          method = method)
-        utils.assertAlmostEqual(ys[-1][0], exp(tmax), tol)
+        utils.assertAlmostEqual(ys[-1], exp(tmax), tol)
 
     # List of test parameters
     methods = [('bdf2', 1e-5),
