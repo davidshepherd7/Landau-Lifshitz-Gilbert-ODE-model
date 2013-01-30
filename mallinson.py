@@ -2,6 +2,7 @@
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 import matplotlib.pyplot as plt
+import functools as ft
 
 import utils
 
@@ -74,6 +75,39 @@ def plot_dynamics(magnetic_parameters,
 
     timestitle = "Polar angle vs time for " + str(magnetic_parameters)
     utils.plot_polar_vs_time(sphs,times, title=timestitle)
+
+    plt.show()
+
+def calculate_equivalent_dynamics(magnetic_parameters, polars):
+    start_angle = polars[0]
+
+    exact_times = map(ft.partial(calculate_switching_time,
+                                 magnetic_parameters, start_angle),
+                        polars)
+
+    exact_azis = map(ft.partial(calculate_azimuthal, magnetic_parameters, start_angle),
+                     polars)
+
+    return exact_times, exact_azis
+
+def plot_vs_exact(magnetic_parameters, ts, ms):
+
+    # Extract lists of the polar coordinates
+    m_as_sph_points = map(utils.array2sph, ms)
+    pols = [m.pol for m in m_as_sph_points]
+    azis = [m.azi for m in m_as_sph_points]
+
+    # Calculate the corresponding exact dynamics
+    exact_times, exact_azis = calculate_equivalent_dynamics(magnetic_parameters, pols)
+
+    # Plot
+    plt.figure()
+    plt.plot(ts, pols, '--',
+                 exact_times, pols)
+
+    plt.figure()
+    plt.plot(pols, azis, '--',
+                pols, exact_azis)
 
     plt.show()
 

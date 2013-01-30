@@ -94,8 +94,6 @@ def bdf(func, y0, tmax, dt, order):
         # Solve the system using the previous y as an initial guess
         ynp1 = newton_krylov(discretised_residual_func, ys[-1])
 
-        print
-        print
         # Update results
         ys.append(ynp1)
         ts.append(ts[-1] + dt)

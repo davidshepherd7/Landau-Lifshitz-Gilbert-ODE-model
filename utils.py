@@ -82,6 +82,27 @@ def sph2cart(spherical_point):
 
     return CartPoint(x,y,z)
 
+def array2sph(point_as_array):
+    """ Convert from an array representation to a SphPoint.
+    """
+
+    assert point_as_array.ndim == 1
+
+    # Presumably this is in spherical coords already
+    if point_as_array.shape[0] == 2:
+        azi = point_as_array[0]
+        pol = point_as_array[1]
+        return SphPoint(1.0, azi, pol)
+
+    # Presumably in cartesian...
+    elif point_as_array.shape[0] == 3:
+        return cart2sph(SphPoint(point_as_array[0],
+                                 point_as_array[1],
+                                 point_as_array[2]))
+
+    else:
+        raise IndexError
+
 
 def plot_sph_points(sphs, title = 'Path of m'):
     carts = map(sph2cart, sphs)
