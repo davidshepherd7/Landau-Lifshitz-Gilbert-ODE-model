@@ -39,8 +39,7 @@ def calculate_azimuthal(magnetic_parameters, p_start, p_now):
 
     alpha = magnetic_parameters.alpha
 
-    no_range_azi = (-1/alpha) * log(tan(p_now/2)/
-                                    tan(p_start/2))
+    no_range_azi = (-1/alpha) * log(tan(p_now/2) / tan(p_start/2))
     return azi_into_range(no_range_azi)
 
 def generate_dynamics(magnetic_parameters,

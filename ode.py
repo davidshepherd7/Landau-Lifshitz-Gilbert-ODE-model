@@ -22,7 +22,7 @@ import utils
 # Possibly need to do something better with the finite differenced
 # Jacobian, it's not very accurate.
 
-def odeint(func, y0, t, dt = None, method = 'bdf2'):
+def odeint(func, y0, tmax, dt = None, method = 'bdf2'):
     """
 
     func: should be a function of time, the previous y values and dydt
@@ -39,11 +39,11 @@ def odeint(func, y0, t, dt = None, method = 'bdf2'):
         raise NotImplementedError("Adaptive timestepping not implemented.")
 
     if method.lower() == 'bdf2':
-        return bdf(func, y0, t, dt = dt, order = 2)
+        return bdf(func, y0, tmax, dt = dt, order = 2)
     elif method.lower() == 'bdf1':
-        return bdf(func, y0, t, dt = dt, order = 1)
+        return bdf(func, y0, tmax, dt = dt, order = 1)
     elif method.lower() == 'midpoint':
-        return midpoint(func, y0, t, dt = dt)
+        return midpoint(func, y0, tmax, dt = dt)
     else:
         raise ValueError("Method "+method+" not recognised.")
 
@@ -88,7 +88,7 @@ def bdf(func, y0, tmax, dt, order):
             time).
             """
             # ??ds not sure why there is a -1 factor here...
-            dydt = -1 * (sum(map(op.mul, y_prev, alphas)) - ynp1) / (beta * dt)
+            dydt = (ynp1 - sum(map(op.mul, y_prev, alphas))) / (beta * dt)
             tnp1 = ts[-1] + dt
             return func(tnp1, ynp1, dydt)
 
@@ -99,6 +99,8 @@ def bdf(func, y0, tmax, dt, order):
         # Update results
         ys.append(ynp1)
         ts.append(ts[-1] + dt)
+
+    # ??ds convert to correct return type?
 
     return ts, ys
 
