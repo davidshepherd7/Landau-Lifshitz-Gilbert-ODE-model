@@ -5,14 +5,7 @@ import scipy.integrate
 import operator as op
 from scipy.optimize import newton_krylov
 
-import utils
-
-# Hopefully in the style of scipy.integrate.ode* i.e.
-# values_at_t = odeint(func, y0, t, args=(), Dfun=None,
-#                      full_output=0, rtol=None, atol=None, tcrit=None)
-
-# But we also need support for (easy) constant timestepping and for
-# choosing the method used, so add dt and method optional parameters.
+import simplellg.utils as utils
 
 
 # TODO:

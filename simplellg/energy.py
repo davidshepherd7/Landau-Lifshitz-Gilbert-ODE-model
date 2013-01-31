@@ -1,10 +1,10 @@
 
-import utils
 import operator as op
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 
-from IPython import embed
+import simplellg.utils as utils
+
 
 def llg_state_energy(sph, magParameters):
     """ Assuming unit volume, spatially constant, spherical.

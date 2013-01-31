@@ -1,8 +1,9 @@
 
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
-import utils
-import ode
+
+import simplellg.utils as utils
+import simplellg.ode as ode
 
 def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
     """ Calculate the residual for the error in dmdt.
