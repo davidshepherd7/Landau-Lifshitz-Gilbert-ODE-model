@@ -1,7 +1,6 @@
 
 import collections
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
-
 import scipy as sp
 import scipy.linalg
 import matplotlib.pyplot as plt
@@ -88,7 +87,7 @@ def array2sph(point_as_array):
 
     assert point_as_array.ndim == 1
 
-    # Presumably this is in spherical coords already
+    # Hopefully 2 dims => spherical coords
     if point_as_array.shape[0] == 2:
         azi = point_as_array[0]
         pol = point_as_array[1]
@@ -161,6 +160,9 @@ class MagParameters():
           + "H = "+ str(self.Hvec) \
           + ", Hk = "+ str(self.Hk) \
           + ", Ms = "+ str(self.Ms)
+
+def relative_error(exact, estimate):
+    return abs(exact - estimate) / exact
 
 # Test this file's code
 # ============================================================
