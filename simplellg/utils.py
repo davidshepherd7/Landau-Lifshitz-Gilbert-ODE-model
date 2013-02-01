@@ -5,7 +5,8 @@ import scipy as sp
 import scipy.linalg
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-
+import itertools as it
+import operator as op
 
 # General
 # ============================================================
@@ -161,8 +162,14 @@ class MagParameters():
           + ", Hk = "+ str(self.Hk) \
           + ", Ms = "+ str(self.Ms)
 
+# Smaller helper functions
+# ============================================================
+
 def relative_error(exact, estimate):
     return abs(exact - estimate) / exact
+
+def dts_from_ts(ts):
+    return list(it.imap(op.sub, ts[1:], ts))
 
 # Test this file's code
 # ============================================================
