@@ -11,118 +11,127 @@ import itertools as it
 import simplellg.utils as utils
 
 
-# TODO:
 
-# ADptive timestepping
+class FailedTimestepError(Exception):
+     def __init__(self, scaling_factor):
+         self.scaling_factor = scaling_factor
+     def __str__(self):
+         return repr(self.scaling_factor)
 
-def noaction(a,b): return a, b
+
+def _timestep_scheme_dispatcher(label):
+    """Pick the functions needed for this method."""
+    label = label.lower()
+
+    if label == 'bdf2':
+        return bdf2_residual, None
+
+    elif label == 'bdf2 ab':
+        return bdf2_residual, bdf2_ab_time_adaptor
+
+    elif label == 'bdf1':
+        return bdf1_residual, None
+
+    elif label == 'midpoint':
+        return midpoint_residual, None
+
+    else:
+        raise ValueError("Method "+method+" not recognised.")
 
 
 def odeint(func, y0, tmax, dt,
            method = 'bdf2',
            target_error = None,
-           adaptive = False,
-           actions_after_timestep = noaction):
+           actions_after_timestep = None):
 
-    ts = [0.0] # ts is a list of times (floats)
-    ys = map(sp.asarray, y0) # ys is a list of ndarrays
+    # Select the method and adaptor
+    time_residual, time_adaptor = _timestep_scheme_dispatcher(method)
 
-    # Construct the appropriate residual. Residuals should now be functions
-    # of t, dt, yprev and ynp1 (only).
-    # ============================================================
-    if method.lower() == 'bdf2':
-        residual = ft.partial(bdf_residual, 2, func)
-        default_dt_adaptor = bdf2_dt_adaptor
+    ts = [0.0] # List of times (floats)
+    ys = map(sp.asarray, y0) # List y vectors (ndarrays)
+    dts = [] # List of time steps (floats)
 
+    if (method.lower() == 'bdf2' or method.lower() == 'bdf2 ab') \
+        and len(y0) < 2:
         # If needed get another initial value using midpoint
         # method. Midpoint method is used because it maintains second order
         # accuracy.
-        if len(y0) < 2:
-            ts, ys = odeint(func, ys, ts[-1] + dt, dt, method = 'midpoint')
-
-    elif method.lower() == 'bdf1':
-        residual = ft.partial(bdf_residual, 1, func)
-        default_dt_adaptor = None
-    elif method.lower() == 'midpoint':
-        residual = ft.partial(midpoint_residual, func)
-        default_dt_adaptor = None
-    else:
-        raise ValueError("Method "+method+" not recognised.")
-
-    # Assign a timestep adaptor
-    # ============================================================
-    if hasattr(adaptive, '__call__'):
-        dt_adaptor = adaptive
-    elif adaptive is True:
-        dt_adaptor = default_dt_adaptor
-    elif adaptive is False:
-        dt_adaptor = lambda ts,ys,tol:ts[-1] - ts[-2] # Dummy
-    else:
-        raise ValueError("adaptive value " + str(adaptive) + "not recognised.")
+        ys, ts, dts = odeint(func, ys, ts[-1] + dt, dt, method = 'midpoint')
 
 
     # Main timestepping loop
     # ============================================================
     while ts[-1] < tmax:
 
-        tnp1 = ts[-1] + dt
+        # Fill in the residual for calculating dydt and the known values:
+        # t, dt, previous y values (in reverse order, done as a slice)
+        # ready for the Newton solver.
+        residual = ft.partial(time_residual, func, ts[-1], dts+[dt], ys)
 
-        # Fill in the known values: t, dt and previous y values (in reverse
-        # order, done as a slice) ready for the Newton solver.
-        final_residual = ft.partial(residual, ts[-1], dt, ys[::-1])
-
-        # Solve the system, using the previous y as an initial guess.
-        try: ynp1 = newton_krylov(final_residual, ys[-1])
+        # Try to solve the system, using the previous y as an initial
+        # guess.
+        try: ynp1 = newton_krylov(residual, ys[-1])
         except sp.optimize.nonlin.NoConvergence:
             # If it failed to converge then half the timestep and try again.
             dt /= 2
             continue
 
-        # Update results
+        # Update results (don't do this earlier in case the time step fails).
         ys.append(ynp1)
-        ts.append(tnp1)
+        ts.append(ts[-1] + dt)
+        dts.append(dt)
 
         # Execute any post-step actions requested (e.g. renormalisation,
         # simplified mid-point method update).
-        ts, ys = actions_after_timestep(ts, ys)
+        if actions_after_timestep is not None:
+            ts, ys, dts = actions_after_timestep(ts, ys, dts)
 
-        # Calculate the next value of dt using whatever function has been
-        # set.
-        dt = dt_adaptor(ts, ys, target_error)
+        # Calculate the next value of dt if needed
+        if time_adaptor is not None:
+            dt = time_adaptor(ts, ys, target_error)
 
-    return ts, ys
+    return ys, ts, dts
 
 
 # Timestepper residual calculation functions
 # ============================================================
 
-def bdf_coeffs(order, name):
-    """Get coefficients for bdf methods. From Atkinson, Numerical Solution
-    of Ordinary Differential Equations.
-    """
-    b_cs = [{'beta' : 1.0, 'alphas' : [1.0]},
-            {'beta' : 2.0/3, 'alphas' : [4.0/3, -1.0/3]},
-            {'beta': 6.0/11, 'alphas' : [18.0/11 -9.0/11, 2.0/11]},]
-    return b_cs[order-1][name]
+def midpoint_residual(base_residual, t, dts, ys, ynp1):
+    dt = dts[-1]
+    yn = ys[-1]
 
-
-def midpoint_residual(base_residual, t, dt, y_prev, ynp1):
-    ymid = (ynp1 + y_prev[0])/2.0
+    ymid = (ynp1 + yn)/2.0
     tmid = t + (dt/2.0)
-    dydt = (ynp1 - y_prev[0])/dt
+    dydt = (ynp1 - yn)/dt
     return base_residual(tmid, ymid, dydt)
 
 
-def bdf_residual(order, base_residual, t, dt, y_prev, ynp1):
-    alphas = bdf_coeffs(order, 'alphas')
-    beta =  bdf_coeffs(order, 'beta')
-    dydt = (ynp1 - sum(it.imap(op.mul, alphas, y_prev))) / (beta * dt)
-    return base_residual(t + dt, ynp1, dydt)
+def bdf1_residual(base_residual, t, dts, ys, ynp1):
+    dt = dts[-1]
+    yn = ys[-1]
+
+    dydt = (ynp1 - yn) / dt
+    return base_residual(t+dt, ynp1, dydt)
+
+
+def bdf2_residual(base_residual, t, dts, ys, ynp1):
+    dt = dts[-1]
+    dtprev = dts[-2]
+    yn = ys[-1]
+    ynm1 = ys[-2]
+
+    a = (2*dt + dtprev)*dtprev
+    prefactor = (2*dt + dtprev)/(dt + dtprev)
+    alphas = [1.0/dt, -1.0/dt - dt/a, dt/a]
+
+    dydt = prefactor * sp.dot(alphas, [ynp1, yn, ynm1])
+    return base_residual(t+dt, ynp1, dydt)
+
 
 # Adaptive timestepping functions
 # ============================================================
 
-def bdf2_dt_adaptor(ts, ys, target_error):
+def bdf2_ab_time_adaptor(ts, ys, target_error):
     """ Calculate a new timestep size based on estimating the error from
     the previous timestep. Weighting numbers stolen from oopmh-lib.
     """
@@ -147,8 +156,14 @@ def bdf2_dt_adaptor(ts, ys, target_error):
     try: error_norm = sp.linalg.norm(errors_est, 2)
     except ValueError: error_norm = abs(errors_est)
 
+    scaling_factor = ((target_error / error_norm)**0.33)
+
+    # If the error is too bad then reject the step
+    if scaling_factor < 0.4:
+        raise FailedTimestepError
+
     # Using error estimate and target error calculate a new time step size.
-    return ((target_error / error_norm)**0.33) * dt
+    return scaling_factor * dt
 
     #
 
@@ -164,7 +179,7 @@ def test_exp_timesteppers():
         def residual(t, y, dydt): return y - dydt
         tmax = 1.0
         dt = 0.001
-        ts, ys = odeint(residual, [exp(0.0)], tmax, dt = dt,
+        ys, ts, dts = odeint(residual, [exp(0.0)], tmax, dt = dt,
                          method = method)
         utils.assertAlmostEqual(ys[-1], exp(tmax), tol)
 
@@ -183,10 +198,14 @@ def test_vector_timesteppers():
     # Auxilary checking function
     def check_vector_timestepper(method, tol):
         def residual(t, y, dydt):
-            return sp.array([-1 * sin(t), y[1]]) - dydt
+            return sp.array([-1.0 * sin(t), y[1]]) - dydt
         tmax = 1.0
-        ts, ys = odeint(residual, [[cos(0.0), exp(0.0)]], tmax, dt = 0.001,
-                        method = method)
+        ys, ts, dts = odeint(residual, [[cos(0.0), exp(0.0)]], tmax, dt = 0.001,
+                             method = method)
+        # plt.plot(ts,ys,'--', ts, map(exp, ts), '-', ts, map(cos, ts))
+        # dts = utils.dts_from_ts(ts)
+        # plt.show()
+
         utils.assertAlmostEqual(ys[-1][0], cos(tmax), tol[0])
         utils.assertAlmostEqual(ys[-1][1], exp(tmax), tol[1])
 
@@ -199,14 +218,15 @@ def test_vector_timesteppers():
     for meth, tol in methods:
         yield check_vector_timestepper, meth, tol
 
+
 def test_adaptive_dt():
 
     # Aux checking function
     def check_adaptive_dt(method, tol, steps):
         def residual(ts, ys, dydt): return ys - dydt
         tmax = 1.0
-        ts, ys = odeint(residual, [exp(0.0)], tmax, dt = 1e-6, method = method,
-                        adaptive=True, target_error = tol)
+        ys, ts, dts = odeint(residual, [exp(0.0)], tmax, dt = 1e-6, method = method,
+                             target_error = tol)
 
         # plt.plot(ts,ys,'--', ts, map(exp, ts))
         # dts = utils.dts_from_ts(ts)
@@ -217,9 +237,9 @@ def test_adaptive_dt():
         utils.assertAlmostEqual(ys[-1],exp(tmax), requested_tol * 2)
         utils.assertAlmostEqual(len(ys), steps, steps * 1.0/10)
 
-    methods = [('bdf2', 1e-3, 328),
+    methods = [('bdf2 ab', 1e-3, 250),
                # ('bdf1', 1e-5, 100),
-               # ('midpoint', 1e-5, 100)
+               # ('midpoint ab', 1e-5, 100)
                ]
     for meth, requested_tol, allowed_steps in methods:
         yield check_adaptive_dt, meth, requested_tol, allowed_steps

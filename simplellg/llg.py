@@ -83,7 +83,7 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
 # ============================================================
 
 
-import mallinson
+import simplellg.mallinson as mlsn
 import functools as ft
 import matplotlib.pyplot as plt
 
@@ -105,10 +105,10 @@ import matplotlib.pyplot as plt
 #     m_as_sph_points = map(utils.array2sph, m_array)
 #     result_pols = [m.pol for m in m_as_sph_points]
 #     result_azis = [m.azi for m in m_as_sph_points]
-#     #exact_times, exact_azis = mallinson.calculate_equivalent_dynamics(mp, result_pols)
+#     #exact_times, exact_azis = mlsn.calculate_equivalent_dynamics(mp, result_pols)
 
 #     # # Plot
-#     # mallinson.plot_vs_exact(mp, result_times, m_array)
+#     # mlsn.plot_vs_exact(mp, result_times, m_array)
 
 #     # fig = utils.plot_sph_points(m_as_sph_points)
 #     # ax = fig.axes[0]
@@ -138,17 +138,17 @@ def test_cartesian_llg():
 
     # Generate llg timestepped solutions
     f_residual = ft.partial(llg_cartesian_residual, mp)
-    result_times, m_cart = ode.odeint(f_residual, [initial_m], tmax, dt = 0.01)
+    m_cart, result_times, _ = ode.odeint(f_residual, [initial_m], tmax, dt = 0.01)
 
     # Extract the solution in spherical polar coordinates and compute exact
     # solutions.
     m_as_sph_points = map(utils.array2sph, m_cart)
     result_pols = [m.pol for m in m_as_sph_points]
     result_azis = [m.azi for m in m_as_sph_points]
-    exact_times, exact_azis = mallinson.calculate_equivalent_dynamics(mp, result_pols)
+    exact_times, exact_azis = mlsn.calculate_equivalent_dynamics(mp, result_pols)
 
     # # # Plot
-    # # mallinson.plot_vs_exact(mp, result_times, m_cart)
+    # # mlsn.plot_vs_exact(mp, result_times, m_cart)
     # plt.figure()
     # m_as_cart_points = map(utils.sph2cart, m_as_sph_points)
 
