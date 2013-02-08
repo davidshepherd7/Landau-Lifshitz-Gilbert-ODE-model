@@ -65,11 +65,6 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
     mu0 = magnetic_parameters.mu0
     Ms = magnetic_parameters.Ms
 
-    # Extract components from arguments
-    mx = m_cart[0]
-    my = m_cart[1]
-    mz = m_cart[2]
-
     h_eff = Hvec
 
     residual = (alpha/Ms) * sp.cross(m_cart, dmdt_cart) \
@@ -138,7 +133,7 @@ def test_cartesian_llg():
 
     # Generate llg timestepped solutions
     f_residual = ft.partial(llg_cartesian_residual, mp)
-    m_cart, result_times, _ = ode.odeint(f_residual, [initial_m], tmax, dt = 0.01)
+    m_cart, result_times, _ = ode.odeint(f_residual, initial_m, tmax, dt = 0.01)
 
     # Extract the solution in spherical polar coordinates and compute exact
     # solutions.
