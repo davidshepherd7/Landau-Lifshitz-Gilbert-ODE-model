@@ -60,9 +60,7 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
     # Extract the parameters
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
-    k1 = magnetic_parameters.K1()
     Hvec = magnetic_parameters.Hvec
-    mu0 = magnetic_parameters.mu0
     Ms = magnetic_parameters.Ms
 
     h_eff = Hvec
@@ -86,10 +84,6 @@ import matplotlib.pyplot as plt
 #     mp = utils.MagParameters()
 #     initial_m = [0.0, pi/18]
 #     tmax = 1.8
-
-#     # # ?/ds
-#     #mp.alpha = 0.0
-#     mp.gamma = 0.5
 
 #     # Calculate llg timestepped solutions
 #     f_residual = ft.partial(llg_spherical_residual, mp)

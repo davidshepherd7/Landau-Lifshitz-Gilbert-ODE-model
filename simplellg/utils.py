@@ -137,13 +137,14 @@ def plot_polar_vs_time(sphs, times, title = 'Polar angle vs time'):
 
 class MagParameters():
 
-    def __init__(self):
-        self.alpha = 1.0
-        self.gamma = 1.0
-        self.Hvec = (0.0, 0.0, -2.0)
-        self.Hk = 0.0
-        self.Ms = 1.0
-        self.mu0 = 1.0
+    gamma = 1.0
+    Hvec = (0.0, 0.0, -2.0)
+    Hk = 0.0
+    Ms = 1.0
+    mu0 = 1.0
+
+    def __init__(self, alpha=1.0):
+        self.alpha = alpha
 
     def H(self):
         return sp.linalg.norm(self.Hvec, ord=2)

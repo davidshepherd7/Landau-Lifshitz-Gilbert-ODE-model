@@ -1,3 +1,5 @@
+from __future__ import division
+
 
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 import scipy as sp
@@ -12,7 +14,7 @@ import simplellg.utils as utils
 
 # PARAMETERS
 MAX_ALLOWED_DT_SCALING_FACTOR = 4.0
-MIN_ALLOWED_DT_SCALING_FACTOR = 0.8
+MIN_ALLOWED_DT_SCALING_FACTOR = 0.9
 TIMESTEP_FAILURE_DT_SCALING_FACTOR = 0.5
 
 MIN_ALLOWED_TIMESTEP = 1e-8
@@ -26,10 +28,11 @@ MAX_ALLOWED_TIMESTEP = 1e8
 
 
 class FailedTimestepError(Exception):
-     def __init__(self, scaling_factor):
-         self.scaling_factor = scaling_factor
+     def __init__(self, new_dt):
+         self.new_dt = new_dt
      def __str__(self):
-         return repr(self.scaling_factor)
+         return "Exception: timestep failed, next timestep should be "\
+           + repr(self.new_dt)
 
 
 def _timestep_scheme_dispatcher(label):
@@ -109,7 +112,7 @@ def _odeint(func, ys, ts, dts, tmax, time_residual,
 
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
-        try: ynp1 = newton_krylov(residual, ys[-1], f_tol=1e10)
+        try: ynp1 = newton_krylov(residual, ys[-1])
         except sp.optimize.nonlin.NoConvergence:
             dt = _scale_timestep(dt, TIMESTEP_FAILURE_DT_SCALING_FACTOR, True)
             continue
@@ -123,8 +126,11 @@ def _odeint(func, ys, ts, dts, tmax, time_residual,
         # Calculate the next value of dt if needed
         if time_adaptor is not None:
             try: dt = time_adaptor(uts, uys, target_error)
-            except FailedTimestepError:
-                dt = _scale_timestep(dt, TIMESTEP_FAILURE_DT_SCALING_FACTOR, True)
+
+            # If the scaling factor is too small then don't store this
+            # timestep, instead repeat it with the new step size.
+            except FailedTimestepError, e:
+                dt = e.new_dt
                 continue
 
         # Update results storage (don't do this earlier in case the time step fails).
@@ -187,7 +193,7 @@ def _scale_timestep(dt, scaling_factor, failed_step_flag=False):
     # step.
     if scaling_factor < MIN_ALLOWED_DT_SCALING_FACTOR \
       and not failed_step_flag:
-        raise FailedTimestepError(scaling_factor)
+        raise FailedTimestepError(scaling_factor * dt)
 
     # If the scaling factor is really large just use the max
     if scaling_factor > MAX_ALLOWED_DT_SCALING_FACTOR:
@@ -208,33 +214,87 @@ def _scale_timestep(dt, scaling_factor, failed_step_flag=False):
     else:
         return scaling_factor * dt
 
+
+def ab2_step(dtn, yn, dyn, dtnm1, dynm1):
+    """ Calculate the solution at time n.
+
+    From: my code... ??ds
+    """
+
+    dtr = (dtn*1.0)/dtnm1
+    ynp1 = yn + 0.5*dtn*((2 + dtr)*dyn -  dtr*dynm1)
+    return ynp1
+
+def bdf2_lte(dt, ys, dys, d2ys, d3ys):
+    """
+
+    From Prinja's thesis.
+    """
+    d3ydt_n = d3ys[-1]
+    return (2.0/9) * d3ydt_n * dt**3
+
 def bdf2_ab_time_adaptor(ts, ys, target_error):
     """ Calculate a new timestep size based on estimating the error from
     the previous timestep. Weighting numbers stolen from oopmh-lib.
     """
 
-    bdf_solutions = ys[-1]
-
     dt = ts[-1] - ts[-2]
+
+    # Fudge the first step
+    if len(ys) < 4: return dt
+
     dtprev = ts[-2] - ts[-3]
-    dtratio = (1.0 * dtprev) / dt
+    dtr = dt / dtprev
 
-    # Set up weights
-    weights = [0.0, 1 - dtratio**2, dtratio**2, (1 + dtratio) * dt]
-    error_weight = (1 + dtratio)**2 / \
-      (1.0 + 3*dtratio + 4*(dtratio**2) + 2*(dtratio**3))
+    # oomph-lib based version:
 
-    # Calculate error estimate
-    predictor_solutions = sum(it.imap(op.mul, weights, ys[::-1]))
-    errors_est = error_weight * (bdf_solutions - predictor_solutions)
+    # # Set up weights
+    # weights = [0.0, 1 - dtr**2, dtr**2, (1 + dtr) * dt]
+    # error_weight = (1 + dtr)**2 / \
+    #   (1.0 + 3*dtr + 4*(dtr**2) + 2*(dtr**3))
 
-    # Get a norm if we have an array, otherwise just take the absolute
-    # value
-    try: error_norm = sp.linalg.norm(errors_est, 2)
-    except ValueError: error_norm = abs(errors_est)
+    # # Calculate error estimate
+    # predictor_solutions = sp.dot(weights, [ys[-1], ys[-2], ys[-3], ys[-4]])
+    # errors_est = error_weight * (ys[-1] - predictor_solutions)
 
-    scaling_factor = ((target_error / error_norm)**0.33)
+    # # Get a norm if we have an array, otherwise just take the absolute
+    # # value
+    # error_norm = sp.linalg.norm(errors_est, 2)
+
+    # My implementation directly from G&S:
+
+    ynm2 = ys[-4]
+    ynm1 = ys[-3]
+    yn = ys[-2]
+    ynp1 = ys[-1]
+
+    # Invert bdf to get predictor data
+    dyn = (3*yn - 4*ynm1 + ynm2)/ (2 * dt) #??ds wrong according to milan
+
+    # # Inverting bdf2 from gresho and sani (3.16-247)
+    # dtnm1 = dtprev
+    # dtnm2 = ts[-3] - ts[-4]
+    # dyn = (1/((dtnm1 + dtnm2)/(2*dtnm1 + dtnm2))) * \
+    #   ( (yn - ynm1)/dtnm1 - ((ynm1 - ynm2)/dtnm2) * (dtnm1/ (2*dtnm1 + dtnm2)))
+
+    # Calculate predictor value (variable dt explicit mid point rule)
+    ynp1_EMP = yn + (1 + dtr)*dt*dyn - (dtr**2)*yn + (dtr**2)*ynm1
+
+    # Calculate truncation error
+
+    error = (ynp1 - ynp1_EMP) * ((1 + dtprev/dt)**2) /\
+             (1 + 3*(dtprev/dt) + 4*(dtprev/dt)**2  + 2*(dtprev/dt)**3)
+    error_norm = sp.linalg.norm(error, 2)
+
+
+    scaling_factor = (target_error / error_norm)**(1.0/3)
     return _scale_timestep(dt, scaling_factor)
+
+def midpoint_lte(dt, ys, dys, d2ys, d3ys):
+    """
+
+
+    """
 
 
 def midpoint_ab_time_adaptor(ts, ys, target_error):
@@ -248,38 +308,46 @@ def midpoint_ab_time_adaptor(ts, ys, target_error):
     dt = ts[-1] - ts[-2]
     dtprev = ts[-2] - ts[-3]
     ynp1_MP = ys[-1]
-    yn_MP = ys[-2]
-    ynm1_MP = ys[-3]
 
 
     # Get explicit adams-bashforth 2 solution (variable timestep -- uses
     # steps at n + 1/2 and n - 1/2)
     # ============================================================
 
-    # Get y derivatives at previous midpoints
+    # Get y derivatives at previous midpoints (this gives no additional
+    # loss of accuracy because we are just inverting the midpoint method to
+    # get back the derivative used).
     ydot_nphalf = (ys[-1] - ys[-2])/dt
     ydot_nmhalf = (ys[-2] - ys[-3])/dtprev
 
-    # Calculate the corresponding timesteps
+    # Approximate y at time n+1/2 by averaging (same as is used in
+    # midpoint).
+    y_nphalf = (ys[-1] + ys[-2])/2
+
+    # Calculate the corresponding fictional timestep sizes
     AB_dt = 0.5*dt
     AB_dtprev = 0.5*dt + 0.5*dtprev
 
     # Calculate using AB2 variable timestep formula
-    ynp1_AB2 = ys[-2] + 0.5*AB_dt*ydot_nphalf + \
-      (AB_dt**2 * (ydot_nphalf - ydot_nmhalf)) / (2 * AB_dtprev)
+    ynp1_AB2 = ab2_step(AB_dt, y_nphalf, ydot_nphalf,
+                        AB_dtprev, ydot_nmhalf)
 
 
     # Choose an estimate for the time derivatives of y at time tn
     # ============================================================
 
-    # Finite difference dy/dt
-    ydotn = (ynp1_MP - ynm1_MP)/(dt + dtprev)
+    # # Finite difference dy/dt from neighbouring y values
+    # ydotn = (ynp1_MP - ynm1_MP)/(dt + dtprev)
 
-    # Ignore d2y/dt2 for now (conservative estimate).
-    ydotdotn = 0
+    # Average of midpoints. Accuracy should be O(h^2)?
+    ydotn = (ydot_nphalf + ydot_nmhalf) / 2
 
-    # alternatively FD it or something
+    # # Ignore d2y/dt2 (conservative estimate?).
+    # ydotdotn = 0.0
 
+    # Finite difference dy2/dt2 from neighbouring dy values. Not sure on
+    # the accuracy here...
+    ydotdotn = (ydot_nphalf - ydot_nmhalf) / (dt/2 + dtprev/2)
 
     # Get the truncation error
     # ============================================================
@@ -295,7 +363,11 @@ def midpoint_ab_time_adaptor(ts, ys, target_error):
     try: error_norm = sp.linalg.norm(error, 2)
     except ValueError: error_norm = abs(error)
 
-    scaling_factor = ((target_error / error_norm)**0.33)
+    scaling_factor = ((target_error / error_norm)**0.5)
+    #??ds what should the power here be?
+
+    # 0.5 works much better than 1/3, but Milan says it should always be
+    # 1/3 because it's a second order method...
 
     return _scale_timestep(dt, scaling_factor)
 
@@ -306,17 +378,51 @@ import matplotlib.pyplot as plt
 
 
 def test_bad_timestep_handling():
-    """ Check that rejected timesteps work.
+    """ Check that rejecting timesteps works.
     """
     def residual(t, y, dydt): return y - dydt
     tmax = 0.001
+    tol = 1e-5
 
-    dts = [1e-6, 1.0]
-    ts = [0.0, 0.0+dts[0]]
+    def list_cummulative_sums(values, start):
+        temp = [start]
+        for v in values:
+            temp.append(temp[-1] + v)
+        return temp
+
+    dts = [1e-6, 1e-6, 1.0]
+    ts = list_cummulative_sums(dts[:-1], 0.)
+    ys = map(exp, ts)
     ys = map(lambda x: sp.array(exp(x), ndmin=1), ts)
     ys, ts, dts = _odeint(residual, ys, ts, dts, tmax,
-                          midpoint_residual, 1e-5, midpoint_ab_time_adaptor)
-    utils.assertAlmostEqual(ys[-1][0], exp(tmax), 10 * 1e-5)
+                          bdf2_residual, tol, bdf2_ab_time_adaptor)
+    utils.assertAlmostEqual(ys[-1], exp(tmax), 10 * tol)
+
+
+def test_ab2():
+    def dydt(t, y): return y
+    tmax = 1.0
+
+    # Oscillate dt a little to check variable timestep maths is ok.
+    dt_base = 1e-4
+    input_dts = it.cycle([dt_base, 5*dt_base])
+
+    # Starting values
+    ts = [0.0, 1e-6]
+    ys = map(exp, ts)
+    dts = [1e-6]
+
+    while ts[-1] < tmax:
+        dtprev = dts[-1]
+        dt = input_dts.next()
+
+        ynp1 = ab2_step(dt, ys[-1], dydt(ts[-1], ys[-1]),
+                                 dtprev, dydt(ts[-2], ys[-2]))
+        ys.append(ynp1)
+        ts.append(ts[-1]+dt)
+        dts.append(dt)
+
+    utils.assertAlmostEqual(ys[-1], exp(ts[-1]), 1e-5)
 
 
 def test_exp_timesteppers():
@@ -369,8 +475,8 @@ def test_adaptive_dt():
     def check_adaptive_dt(method, tol, steps):
         def residual(ts, ys, dydt): return ys - dydt
         tmax = 1.0
-        ys, ts, dts = odeint(residual, [exp(0.0)], tmax, dt = 1e-6, method = method,
-                             target_error = tol)
+        ys, ts, dts = odeint(residual, [exp(0.0)], tmax, dt = 1e-6,
+                             method = method, target_error = tol)
 
         # plt.plot(ts,ys,'--', ts, map(exp, ts))
         # dts = utils.dts_from_ts(ts)
@@ -378,11 +484,66 @@ def test_adaptive_dt():
         # plt.plot(ts[:-1],dts)
         # plt.show()
 
-        utils.assertAlmostEqual(ys[-1][0],exp(tmax), requested_tol * 5)
-        utils.assertAlmostEqual(len(ys), steps, steps * 0.05)
+        print "nsteps =", len(ys)
 
-    methods = [('bdf2 ab', 1e-3, 250),
-               ('midpoint ab', 1e-3, 303),
+        utils.assertAlmostEqual(ys[-1][0], exp(tmax), requested_tol * 5)
+        utils.assertAlmostEqual(len(ys), steps, steps * 0.1)
+
+    methods = [('bdf2 ab', 1e-3, 382),
+               ('midpoint ab', 1e-3, 105),
                ]
     for meth, requested_tol, allowed_steps in methods:
         yield check_adaptive_dt, meth, requested_tol, allowed_steps
+
+def test_local_truncation_error():
+    """Test that a single timestep has local truncation error below that
+    given by the appropriate function.
+    """
+
+    tests = [ ##(midpoint_residual, midpoint_lte),
+    #(trapezoid_rule_residual, trapezoid_rule_lte),
+    (bdf2_residual, bdf2_lte),
+    #(bdf1_residual, bdf1_lte),
+    ]
+
+    # Auxilary function
+    def check_local_truncation_error(method_residual, error_function):
+
+        # define the function we are approximating (exponential)
+        def residual(t, y, dydt): return y - dydt
+        value = exp
+        d1y = exp
+        d2y = exp
+        d3y = exp
+
+        tstart = 2.0
+
+        # Can't do smaller than ~1e-4 because in second order methods lte
+        # is ~dt^3 and (1e-4)^3 = 1e-12 which is approaching numerical
+        # error.
+        for dt in [1e-2, 1e-3, 5e-4]:
+
+            # Additional points for higher order methods
+            ts = [tstart - 1e-6, tstart]
+            ys = map(exp, ts)
+            dts = [1e-6]
+            tmax = tstart + dt
+
+            ys, ts, dts = _odeint(residual, ys, ts, dts+[dt],
+                                 tmax, method_residual)
+
+            lte_analytic = error_function(dt, map(value, ts), map(d1y, ts),
+                                          map(d2y,ts), map(d3y,ts))
+
+            # Check
+            actual_error = ys[-1] - value(tmax)
+            print "actual_error =", actual_error
+            print "calculated error =", lte_analytic
+            print
+
+            #assert(actual_error < lte_analytic)
+            utils.assertAlmostEqual(actual_error, lte_analytic, lte_analytic*10)
+            # ??ds Not sure exactly how close estimate will be...
+
+    for meth_res, tol_func in tests:
+        yield check_local_truncation_error, meth_res, tol_func
