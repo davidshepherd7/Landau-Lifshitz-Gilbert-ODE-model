@@ -21,11 +21,6 @@ MIN_ALLOWED_TIMESTEP = 1e-8
 MAX_ALLOWED_TIMESTEP = 1e8
 
 
-# TODO
-
-# Fix data flow in _odeint--having updated and non-updated lists around is
-# strange...
-
 
 # Data storage notes
 # ============================================================
@@ -138,14 +133,17 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 
         # Execute any post-step actions requested (e.g. renormalisation,
         # simplified mid-point method update).
-        uts, uys = ts+[ts[-1]+dt], ys+[ynp1]
         if actions_after_timestep is not None:
-            uts, uys = actions_after_timestep(uts, uys)
+            u_tnp1, u_ynp1 = actions_after_timestep(ts+[tnp1], ys+[ynp1])
+            # Note: we store the results in new variables so that we can
+            # easily discard this step if it fails.
+        else:
+            u_tnp1, u_ynp1 = tnp1, ynp1
 
         # Calculate the next value of dt if needed
         if time_adaptor is not None:
             try:
-                dt = time_adaptor(uts, uys, target_error)
+                dt = time_adaptor(ts+[u_tnp1], ys+[u_ynp1], target_error)
 
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
@@ -155,8 +153,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 
         # Update results storage (don't do this earlier in case the time
         # step fails).
-        ys.append(uys[-1])
-        ts.append(uts[-1])
+        ys.append(u_ynp1)
+        ts.append(u_tnp1)
 
     return ys, ts
 
