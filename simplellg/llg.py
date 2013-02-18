@@ -32,29 +32,31 @@ def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
     # dEdmazi = 0
     # dEdmpol = -k1 * 2 * sin(pol) * cos(pol)
 
-    # Zeeman:
-    dEdmazi = - mu0 * Ms * hazi
-    dEdmpol = - mu0 * Ms * hpol
+    if hazi < 0. or hazi > 2*pi or mazi < 0. or mazi > 2*pi:
+        raise ValueError
 
+    # Zeeman: ??ds minus sign?
+    if (mazi - hazi) == 0:
+        dEdmazi = 0.
+    else:
+        dEdmazi = - Ms * H * sin(absmod2pi(mazi - hazi)) * sp.sign(mazi - hazi)
+
+    if (mpol - hpol) == 0:
+        dEdmpol = 0.
+    else:
+        dEdmpol = - Ms * H * sin(abs(mpol - hpol)) * sp.sign(mpol - hpol)
+
+    print abs(mazi - hazi), abs(mpol - hpol)
 
     # From Nonlinear Magnetization Dynamics in Nanosystems By Isaak
     # D. Mayergoyz, Giorgio Bertotti, Claudio Serpico pg. 39 with theta =
     # polar angle, phi = azimuthal angle.
     residual = sp.empty((2))
-    residual[0] = dpoldt + (alpha * sin(pol) * dazidt) + (gamma/Ms) *(1.0/sin(pol)) * dEdmazi
-    residual[1] = (sin(pol) * dazidt) - (gamma/Ms) * dEdmpol - (alpha * dpoldt)
+    residual[0] = dmpoldt + (alpha * sin(mpol) * dmazidt) \
+      + (gamma/Ms) *(1.0/sin(mpol)) * dEdmazi
+    residual[1] = (sin(mpol) * dmazidt) \
+      - (gamma/Ms) * dEdmpol - (alpha * dmpoldt)
 
-    # From some thesis,a ssuming theta = polar, phi = azi
-    residual2 = sp.empty((2))
-    residual2[0] = dpoldt + alpha * dazidt * sin(pol) + (gamma / (Ms * sin(pol))) * dEdmazi
-    residual2[1] = dazidt * sin(pol) -  (gamma/Ms) * dEdmpol - alpha * dpoldt
-
-    assert all(map(utils.almostEqual, residual, residual2))
-
-    print m_sph
-
-
-    #print m_sph, dmdt_sph, residual
     return residual
 
 
