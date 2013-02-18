@@ -1,27 +1,30 @@
-
+"""Various residuals for the LLG equation
+"""
+from __future__ import division
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
-
 import simplellg.utils as utils
 import simplellg.ode as ode
 
+
+def absmod2pi(a): return abs(a % (2 * pi))
+
+
 def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
-    """ Calculate the residual for the error in dmdt.
+    """ Calculate the residual for a guess at dmdt.
     """
     # Extract the parameters
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
-    k1 = magnetic_parameters.K1()
-    mu0 = magnetic_parameters.mu0
     Ms = magnetic_parameters.Ms
-    _, hazi, hpol = utils.cart2sph(magnetic_parameters.Hvec)
+    H, hazi, hpol = utils.cart2sph(magnetic_parameters.Hvec)
 
-    # Extract components from arguments
-    azi = m_sph[0]
-    pol = m_sph[1]
+    # Ensure that the angles are in the correct range
+    # ??ds improve
+    _, mazi, mpol = utils.cart2sph(utils.sph2cart([Ms, m_sph[0], m_sph[1]]))
 
-    dazidt = dmdt_sph[0]
-    dpoldt = dmdt_sph[1]
+    dmazidt = dmdt_sph[0]
+    dmpoldt = dmdt_sph[1]
 
     # Calculate fields:
     # no exchange, no Hms for now
@@ -70,82 +73,55 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
       - dmdt_cart
     return residual
 
+
+def llg_constrained_cartesian_residual(magnetic_parameters, t, m_cart,
+                                       dmdt_cart):
+
+    base_residual = llg_cartesian_residual(magnetic_parameters, t, m_cart[:-1],
+                                           dmdt_cart[:-1])
+
+    pass
+
     #
 
 # Testing
 # ============================================================
 
-
 import simplellg.mallinson as mlsn
 import functools as ft
 import matplotlib.pyplot as plt
 
-# def test_spherical_llg():
-#     mp = utils.MagParameters()
-#     initial_m = [0.0, pi/18]
-#     tmax = 1.8
 
-#     # Calculate llg timestepped solutions
-#     f_residual = ft.partial(llg_spherical_residual, mp)
-#     result_times, m_array = ode.odeint(f_residual, [initial_m], tmax, dt = 0.01)
+def test_llg_residuals():
+    m0_sph = [0.0, pi/18]
+    m0_cart = utils.sph2cart(tuple([1.0] + m0_sph))
+    m0_constrained = list(m0_cart) + [None] #??ds
 
-#     # Extract the solution in spherical polar coordinates and compute exact
-#     # solutions.
-#     m_as_sph_points = map(utils.array2sph, m_array)
-#     result_pols = [m.pol for m in m_as_sph_points]
-#     result_azis = [m.azi for m in m_as_sph_points]
-#     #exact_times, exact_azis = mlsn.calculate_equivalent_dynamics(mp, result_pols)
+    residuals = [(llg_cartesian_residual, m0_cart),
+                 #(llg_spherical_residual, m0_sph),
+                 # (llg_constrained_cartesian_residual, m0_constrained),
+                 ]
 
-#     # # Plot
-#     # mlsn.plot_vs_exact(mp, result_times, m_array)
-
-#     # fig = utils.plot_sph_points(m_as_sph_points)
-#     # ax = fig.axes[0]
-#     # ax.plot([0,0],[0,0],[-1,1],'--')
-#     # ax.set_zlim(-1,1)
-#     # fig.axes[0].set_xlim(-1,1)
-#     # fig.axes[0].set_ylim(-1,1)
+    for r, i in residuals:
+        yield check_residual, r, i
 
 
-#     plt.figure()
-#     m_as_cart_points = map(utils.sph2cart, m_as_sph_points)
+def check_residual(residual, initial_m):
+    mag_params = utils.MagParameters()
+    tmax = 3.0
+    f_residual = ft.partial(residual, mag_params)
 
-#     plt.plot(result_times, [m.x for m in m_as_cart_points])
-#     plt.plot(result_times, [m.y for m in m_as_cart_points])
-#     plt.plot(result_times, [m.z for m in m_as_cart_points])
-#     plt.draw()
+    # Timestep to a solution + convert to spherical
+    m_list, result_times = ode.odeint(f_residual, sp.array(initial_m),
+                                      tmax, dt = 0.01)
+    m_sph = [utils.array2sph(m) for m in m_list]
+    result_pols = [m.pol for m in m_sph]
+    result_azis = [m.azi for m in m_sph]
 
-#     # # Check
-#     # map(utils.assertAlmostEqual, exact_azis, result_azis)
-#     # map(utils.assertAlmostEqual, exact_times, result_times)
-
-
-def test_cartesian_llg():
-    mp = utils.MagParameters()
-    initial_m = utils.sph2cart([1.0, 0.0, pi/18])
-    tmax = 1.0
-
-    # Generate llg timestepped solutions
-    f_residual = ft.partial(llg_cartesian_residual, mp)
-    m_cart, result_times, _ = ode.odeint(f_residual, initial_m, tmax, dt = 0.01)
-
-    # Extract the solution in spherical polar coordinates and compute exact
-    # solutions.
-    m_as_sph_points = map(utils.array2sph, m_cart)
-    result_pols = [m.pol for m in m_as_sph_points]
-    result_azis = [m.azi for m in m_as_sph_points]
-    exact_times, exact_azis = mlsn.calculate_equivalent_dynamics(mp, result_pols)
-
-    # # # Plot
-    # # mlsn.plot_vs_exact(mp, result_times, m_cart)
-    # plt.figure()
-    # m_as_cart_points = map(utils.sph2cart, m_as_sph_points)
-
-    # plt.plot(result_times, [m.x for m in m_as_cart_points])
-    # plt.plot(result_times, [m.y for m in m_as_cart_points])
-    # plt.plot(result_times, [m.z for m in m_as_cart_points])
-    # plt.show()
+    # Calculate exact solutions
+    exact_times, exact_azis = \
+      mlsn.calculate_equivalent_dynamics(mag_params, result_pols)
 
     # Check
-    map(ft.partial(utils.assertAlmostEqual, tol = 1e-3), exact_azis, result_azis)
-    map(ft.partial(utils.assertAlmostEqual, tol = 1e-3), exact_times, result_times)
+    utils.assertListAlmostEqual(exact_azis, result_azis, 1e-3)
+    utils.assertListAlmostEqual(exact_times, result_times, 1e-3)

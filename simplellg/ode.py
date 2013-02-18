@@ -4,11 +4,11 @@ from __future__ import division
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 import scipy as sp
 import scipy.integrate
-import operator as op
 from scipy.optimize import newton_krylov
 import scipy.optimize.nonlin
 import functools as ft
 import itertools as it
+import copy
 
 import simplellg.utils as utils
 
@@ -27,12 +27,25 @@ MAX_ALLOWED_TIMESTEP = 1e8
 # strange...
 
 
+# Data storage notes
+# ============================================================
+
+# Y values and time values are stored in lists throughout (for easy
+# appending).
+
+# The final value in each of these lists (accessed with [-1]) is the most
+# recent.
+
+# Almost always the most recent value in the list is the current
+# guess/result for ynp1/tnp1 (i.e. y_{n+1}, t_{n+1}, i.e. the value being
+# calculated), the previous is yn, etc.
+
 class FailedTimestepError(Exception):
-     def __init__(self, new_dt):
+    def __init__(self, new_dt):
          self.new_dt = new_dt
-     def __str__(self):
-         return "Exception: timestep failed, next timestep should be "\
-           + repr(self.new_dt)
+    def __str__(self):
+        return "Exception: timestep failed, next timestep should be "\
+          + repr(self.new_dt)
 
 
 def _timestep_scheme_dispatcher(label):
@@ -42,10 +55,11 @@ def _timestep_scheme_dispatcher(label):
     label = label.lower()
 
     if label == 'bdf2':
-        return bdf2_residual, None, ft.partial(higher_order_start,2)
+        return bdf2_residual, None, ft.partial(higher_order_start, 2)
 
     elif label == 'bdf2 ab':
-        return bdf2_residual, bdf2_ab_time_adaptor, ft.partial(higher_order_start,2)
+        return bdf2_residual, bdf2_ab_time_adaptor,\
+          ft.partial(higher_order_start, 2)
 
     elif label == 'bdf1':
         return bdf1_residual, None, None

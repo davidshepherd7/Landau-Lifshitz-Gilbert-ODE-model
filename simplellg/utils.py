@@ -1,4 +1,5 @@
 
+from __future__ import division
 import collections
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
@@ -25,19 +26,31 @@ def unzip(iterable_of_iterables):
 # Testing helpers
 # ============================================================
 
-# Some useful asserts. Use the assert command in each to make sure we get
-# useful output from nose -d.
-def almostEqual(a, b, tol = 1e-9): return abs(a - b) < tol
-def assertAlmostEqual(a, b, tol = 1e-9): assert(almostEqual(a, b, tol))
-def assertAlmostZero(a, tol = 1e-9): assert(abs(a) < tol)
-def assertTupleAlmostEqual(tup1, tup2): map(assertAlmostEqual, tup1, tup2)
+# Some useful asserts. We explicitly use the assert command in each
+# (instead of defining the almost equal commands in terms of each
+# other) to make sure we get useful output from nose -d.
+def almost_equal(a, b, tol = 1e-9):
+    return abs(a - b) < tol
+
+def assertAlmostEqual(a, b, tol = 1e-9):
+    assert(abs(a - b) < tol)
+
+def assertAlmostZero(a, tol = 1e-9):
+    assert(abs(a) < tol)
+
+def assertListAlmostEqual(list_a, list_b, tol = 1e-9):
+    for a, b in zip(list_a, list_b):
+        assert(abs(a - b) < tol)
+
 
 # Spherical polar coordinates asserts
 def assertAziInRange(sph):
-    assert(sph.azi > 0 or almostEqual(sph.azi, 0.0))
-    assert(sph.azi < 2*pi or almostEqual(sph.azi, 2*pi))
+    assert(sph.azi > 0 or almost_equal(sph.azi, 0.0))
+    assert(sph.azi < 2*pi or almost_equal(sph.azi, 2*pi))
+
 def assertPolarInRange(sph):
     assert(sph.pol >= 0 and sph.pol <= pi)
+
 
 # Coordinate systems
 # ============================================================
@@ -57,10 +70,10 @@ def cart2sph(cartesian_point):
     """
     x, y, z = cartesian_point
 
-    r = sqrt(sum(map(lambda x: x**2, cartesian_point)))
+    r = sp.linalg.norm(cartesian_point, 2)
 
     # Get azimuthal then shift from [-pi,pi] to [0,2pi]
-    azi = atan2(y,x)
+    azi = atan2(y, x)
     if azi < 0: azi += 2*pi
 
     # Dodge the problem at central singular point...
@@ -80,7 +93,7 @@ def sph2cart(spherical_point):
     y = r * sin(azi) * sin(pol)
     z = r * cos(pol)
 
-    return CartPoint(x,y,z)
+    return CartPoint(x, y, z)
 
 def array2sph(point_as_array):
     """ Convert from an array representation to a SphPoint.
@@ -110,13 +123,23 @@ def plot_sph_points(sphs, title = 'Path of m'):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    xs,ys,zs = unzip(carts)
-    ax.plot(xs,ys,zs)
+    # Plot the path
+    xs, ys, zs = unzip(carts)
+    ax.plot(xs, ys, zs)
 
-    start_point = carts[1]
+    # Draw on the starting point
+    start_point = carts[0]
     ax.scatter(start_point.x, start_point.y, start_point.z)
 
+    # Draw on z-axis
+    ax.plot([0,0], [0,0], [-1,1], '--')
+
     plt.title(title)
+
+    # Axes
+    ax.set_zlim(-1, 1)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
 
     return fig
 
@@ -125,8 +148,8 @@ def plot_polar_vs_time(sphs, times, title = 'Polar angle vs time'):
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
-    rs,azis,pols = unzip(sphs)
-    ax.plot(times,pols)
+    rs, azis, pols = unzip(sphs)
+    ax.plot(times, pols)
 
     plt.xlabel('time/ arb. units')
     plt.ylabel('polar angle/ radians')
@@ -172,24 +195,28 @@ def relative_error(exact, estimate):
 def dts_from_ts(ts):
     return list(it.imap(op.sub, ts[1:], ts))
 
+ts2dts = dts_from_ts
+
+def ts2dtn(ts): return ts[-1] - ts[-2]
+def ts2dtnm1(ts): return ts[-2] - ts[-3]
+
 # Test this file's code
 # ============================================================
 
 import unittest
 from random import random
-from scipy import linspace
 
 class TestCoordinateConversion(unittest.TestCase):
 
     # Pick some coordinate lists to try out
     def setUp(self):
         def carttuple(x): return (x*random(), x*random(), x*random())
-        self.carts = map(carttuple, linspace(0, 2, 20))
+        self.carts = map(carttuple, sp.linspace(0, 2, 20))
         self.sphs = map(cart2sph, self.carts)
 
     # Check that applying both operations gives back the same thing
     def check_cart_sph_composition(self, cart, sph):
-         assertTupleAlmostEqual(cart, sph2cart(sph))
+        assertListAlmostEqual(cart, sph2cart(sph))
     def test_composition_is_identity(self):
         for (cart, sph) in zip(self.carts, self.sphs):
             self.check_cart_sph_composition(cart, sph)
