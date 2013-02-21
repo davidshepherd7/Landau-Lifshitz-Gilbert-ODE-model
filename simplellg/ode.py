@@ -14,7 +14,7 @@ import simplellg.utils as utils
 
 # PARAMETERS
 MAX_ALLOWED_DT_SCALING_FACTOR = 4.0
-MIN_ALLOWED_DT_SCALING_FACTOR = 0.9
+MIN_ALLOWED_DT_SCALING_FACTOR = 0.8
 TIMESTEP_FAILURE_DT_SCALING_FACTOR = 0.5
 
 MIN_ALLOWED_TIMESTEP = 1e-8
@@ -32,8 +32,13 @@ MAX_ALLOWED_TIMESTEP = 1e8
 # recent.
 
 # Almost always the most recent value in the list is the current
-# guess/result for ynp1/tnp1 (i.e. y_{n+1}, t_{n+1}, i.e. the value being
-# calculated), the previous is yn, etc.
+# guess/result for y_np1/t_np1 (i.e. y_{n+1}, t_{n+1}, i.e. the value being
+# calculated), the previous is y_n, etc.
+
+# Denote values of y/t at timestep using eg. y_np1 for y at step n+1. Use
+# 'h' for 0.5, 'm' for minus, 'p' for plus (since we can't include .,-,+ in
+# variable names).
+
 
 class FailedTimestepError(Exception):
     def __init__(self, new_dt):
@@ -117,16 +122,16 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
     # ============================================================
     while ts[-1] < tmax:
 
-        tnp1 = ts[-1] + dt
+        t_np1 = ts[-1] + dt
 
         # Fill in the residual for calculating dydt and the previous time
         # and y values ready for the Newton solver.
-        residual = lambda ynp1: time_residual(func, ts+[tnp1], ys+[ynp1])
+        residual = lambda y_np1: time_residual(func, ts+[t_np1], ys+[y_np1])
 
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
         try:
-            ynp1 = newton_krylov(residual, ys[-1], f_tol=1e-8, method='gmres')
+            y_np1 = newton_krylov(residual, ys[-1], f_tol=1e-8, method='gmres')
         except sp.optimize.nonlin.NoConvergence:
             dt = _scale_timestep(dt, TIMESTEP_FAILURE_DT_SCALING_FACTOR, True)
             continue
@@ -134,16 +139,16 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         # Execute any post-step actions requested (e.g. renormalisation,
         # simplified mid-point method update).
         if actions_after_timestep is not None:
-            u_tnp1, u_ynp1 = actions_after_timestep(ts+[tnp1], ys+[ynp1])
+            new_t_np1, new_y_np1 = actions_after_timestep(ts+[t_np1], ys+[y_np1])
             # Note: we store the results in new variables so that we can
             # easily discard this step if it fails.
         else:
-            u_tnp1, u_ynp1 = tnp1, ynp1
+            new_t_np1, new_y_np1 = t_np1, y_np1
 
         # Calculate the next value of dt if needed
         if time_adaptor is not None:
             try:
-                dt = time_adaptor(ts+[u_tnp1], ys+[u_ynp1], target_error)
+                dt = time_adaptor(ts+[new_t_np1], ys+[new_y_np1], target_error)
 
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
@@ -153,8 +158,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 
         # Update results storage (don't do this earlier in case the time
         # step fails).
-        ys.append(u_ynp1)
-        ts.append(u_tnp1)
+        ys.append(new_y_np1)
+        ts.append(new_t_np1)
 
     return ys, ts
 
@@ -164,38 +169,39 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 
 def midpoint_residual(base_residual, ts, ys):
     dt = ts[-1] - ts[-2]
-    yn = ys[-2]
-    ynp1 = ys[-1]
+    y_n = ys[-2]
+    y_np1 = ys[-1]
 
-    ymid = (ynp1 + yn) * 0.5
-    tmid = ts[-2] + (dt*0.5)
-    dydt = (ynp1 - yn)/dt
-    return base_residual(tmid, ymid, dydt)
+    y_nph = (y_np1 + y_n) * 0.5
+    tmid = (ts[-1] + ts[-2]) * 0.5
+    dydt = (y_np1 - y_n)/dt
+
+    return base_residual(tmid, y_nph, dydt)
 
 
 def bdf1_residual(base_residual, ts, ys):
     dt = ts[-1] - ts[-2]
-    yn = ys[-2]
-    ynp1 = ys[-1]
+    y_n = ys[-2]
+    y_np1 = ys[-1]
 
-    dydt = (ynp1 - yn) / dt
-    return base_residual(ts[-1], ynp1, dydt)
+    dydt = (y_np1 - y_n) / dt
+    return base_residual(ts[-1], y_np1, dydt)
 
 
 def bdf2_residual(base_residual, ts, ys):
     dt = ts[-1] - ts[-2]
     dtprev = ts[-2] - ts[-3]
 
-    ynp1 = ys[-1]
-    yn = ys[-2]
-    ynm1 = ys[-3]
+    y_np1 = ys[-1]
+    y_n = ys[-2]
+    y_nm1 = ys[-3]
 
     a = (2*dt + dtprev)*dtprev
     prefactor = (2*dt + dtprev)/(dt + dtprev)
     alphas = [1.0/dt, -1.0/dt - dt/a, dt/a]
 
-    dydt = prefactor * sp.dot(alphas, [ynp1, yn, ynm1])
-    return base_residual(ts[-1], ynp1, dydt)
+    dydt = prefactor * sp.dot(alphas, [y_np1, y_n, y_nm1])
+    return base_residual(ts[-1], y_np1, dydt)
 
 
 # Assumption: we never actually undo a timestep (otherwise dys will become
@@ -213,12 +219,12 @@ class TrapezoidRuleResidual(object):
         """
         if len(self.dys) < len(ys) - 1:
             dtprev = ts[-2] - ts[-3]
-            dyn = (2.0 / dtprev) * (ys[-2] - ys[-3]) - self.dys[-1]
-            self.dys.append(dyn)
+            dy_n = (2.0 / dtprev) * (ys[-2] - ys[-3]) - self.dys[-1]
+            self.dys.append(dy_n)
 
 
     def _get_initial_dy(self, base_residual, ts, ys):
-        """Calculate a step with midpoint to get dydt at yn.
+        """Calculate a step with midpoint to get dydt at y_n.
         """
 
         # We want to ignore the most recent two steps (the one being solved
@@ -229,7 +235,7 @@ class TrapezoidRuleResidual(object):
         temp_ys = copy.deepcopy(ys[:-2])
 
         # Timestep should be double the timestep used for the previous
-        # step, so that the midpoint is at yn.
+        # step, so that the midpoint is at y_n.
         dt = 2*(ts[-2] - ts[-3])
 
         # Calculate time step
@@ -241,12 +247,12 @@ class TrapezoidRuleResidual(object):
         utils.assertAlmostEqual((temp_ts[-1] + temp_ts[-2])/2, ts[-2])
 
         # Now invert midpoint to get the derivative
-        ydot_nphalf = (temp_ys[-1] - temp_ys[-2])/dt
+        dy_nph = (temp_ys[-1] - temp_ys[-2])/dt
 
         # Fill in dummys (as many as we have y values) followed by the
         # derivative we just calculated.
         self.dys = [float('nan')] * (len(ys)-1)
-        self.dys[-1] = ydot_nphalf
+        self.dys[-1] = dy_nph
 
 
     def __call__(self, base_residual, ts, ys):
@@ -254,15 +260,15 @@ class TrapezoidRuleResidual(object):
             self._get_initial_dy(base_residual, ts, ys)
 
         dt = ts[-1] - ts[-2]
-        tnp1 = ts[-1]
-        yn = ys[-2]
-        ynp1 = ys[-1]
+        t_np1 = ts[-1]
+        y_n = ys[-2]
+        y_np1 = ys[-1]
 
         self.calculate_new_dy_if_needed(ts, ys)
-        dyn = self.dys[-1]
+        dy_n = self.dys[-1]
 
-        dynp1 = (2.0/dt) * (ynp1 - yn) - dyn
-        return base_residual(tnp1, ynp1, dynp1)
+        dy_np1 = (2.0/dt) * (y_np1 - y_n) - dy_n
+        return base_residual(t_np1, y_np1, dy_np1)
 
 # Adaptive timestepping functions
 # ============================================================
@@ -298,15 +304,14 @@ def _scale_timestep(dt, scaling_factor, failed_step_flag=False):
         return scaling_factor * dt
 
 
-def ab2_step(dtn, yn, dyn, dtnm1, dynm1):
+def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
     """ Calculate the solution at time n.
 
     From: my code... ??ds
     """
-
-    dtr = (dtn*1.0)/dtnm1
-    ynp1 = yn + 0.5*dtn*((2 + dtr)*dyn -  dtr*dynm1)
-    return ynp1
+    dtr = dt_n / dt_nm1
+    y_np1 = y_n + 0.5*dt_n*((2 + dtr)*dy_n - dtr*dy_nm1)
+    return y_np1
 
 
 def bdf2_lte(dt, ys, dys, d2ys, d3ys):
@@ -320,16 +325,6 @@ def trapezoid_lte(dt, ys, dys, d2ys, d3ys):
     """ Calculated myself, notes: 15/2/13.
     """
     return (1.0/12) * dt**3 * d3ys[-1]
-
-
-def midpoint_lte(dt, ys, dys, d2ys, d3ys):
-    """ From Milan
-    """
-    # Milan's:
-    return (d3ys[-1] * dys[-1] - 2*(d2ys[-1]**2)) * dt**3 / 24
-
-    # # Other guy
-    # return (d3ys[-1] * dys[-1] - 2*(d2ys[-1]**2)) * dys[-1] * dt**3 / 24
 
 
 def bdf2_ab_time_adaptor(ts, ys, target_error):
@@ -362,26 +357,26 @@ def bdf2_ab_time_adaptor(ts, ys, target_error):
 
     # My implementation directly from G&S:
 
-    ynm2 = ys[-4]
-    ynm1 = ys[-3]
-    yn = ys[-2]
-    ynp1 = ys[-1]
+    y_nm2 = ys[-4]
+    y_nm1 = ys[-3]
+    y_n = ys[-2]
+    y_np1 = ys[-1]
 
     # Invert bdf to get predictor data
-    dyn = (3*yn - 4*ynm1 + ynm2)/ (2 * dt) #??ds wrong according to milan
+    dy_n = (3*y_n - 4*y_nm1 + y_nm2)/ (2 * dt) #??ds wrong according to milan
 
     # # Inverting bdf2 from gresho and sani (3.16-247)
-    # dtnm1 = dtprev
-    # dtnm2 = ts[-3] - ts[-4]
-    # dyn = (1/((dtnm1 + dtnm2)/(2*dtnm1 + dtnm2))) * \
-    #   ( (yn - ynm1)/dtnm1 - ((ynm1 - ynm2)/dtnm2) * (dtnm1/ (2*dtnm1 + dtnm2)))
+    # dt_nm1 = dtprev
+    # dt_nm2 = ts[-3] - ts[-4]
+    # dy_n = (1/((dt_nm1 + dt_nm2)/(2*dt_nm1 + dt_nm2))) * \
+    #   ( (y_n - y_nm1)/dt_nm1 - ((y_nm1 - y_nm2)/dt_nm2) * (dt_nm1/ (2*dt_nm1 + dt_nm2)))
 
     # Calculate predictor value (variable dt explicit mid point rule)
-    ynp1_EMP = yn + (1 + dtr)*dt*dyn - (dtr**2)*yn + (dtr**2)*ynm1
+    y_np1_EMP = y_n + (1 + dtr)*dt*dy_n - (dtr**2)*y_n + (dtr**2)*y_nm1
 
     # Calculate truncation error
 
-    error = (ynp1 - ynp1_EMP) * ((1 + dtprev/dt)**2) /\
+    error = (y_np1 - y_np1_EMP) * ((1 + dtprev/dt)**2) /\
              (1 + 3*(dtprev/dt) + 4*(dtprev/dt)**2  + 2*(dtprev/dt)**3)
     error_norm = sp.linalg.norm(error, 2)
 
@@ -400,66 +395,63 @@ def midpoint_ab_time_adaptor(ts, ys, target_error):
 
     dt = ts[-1] - ts[-2]
     dtprev = ts[-2] - ts[-3]
-    ynp1_MP = ys[-1]
-    ynm1_MP = ys[-3]
+    y_np1_MP = ys[-1]
+    y_nm1_MP = ys[-3]
 
 
     # Get explicit adams-bashforth 2 solution (variable timestep -- uses
-    # steps at n + 1/2 and n - 1/2)
+    # steps at n + 1/2 and n - 1/2).
     # ============================================================
 
     # Get y derivatives at previous midpoints (this gives no additional
     # loss of accuracy because we are just inverting the midpoint method to
-    # get back the derivative used).
-    ydot_nphalf = (ys[-1] - ys[-2])/dt
-    ydot_nmhalf = (ys[-2] - ys[-3])/dtprev
+    # get back the derivative).
+    dy_nph = (ys[-1] - ys[-2])/dt
+    dy_nmh = (ys[-2] - ys[-3])/dtprev
 
-    # Approximate y at time n+1/2 by averaging (same as is used in
-    # midpoint).
-    y_nphalf = (ys[-1] + ys[-2])/2
+    # Approximate y at step n+1/2 by averaging.
+    y_nph = (ys[-1] + ys[-2]) * 0.5 # (ys[-1] + ys[-2])/2
 
     # Calculate the corresponding fictional timestep sizes
     AB_dt = 0.5*dt
     AB_dtprev = 0.5*dt + 0.5*dtprev
 
     # Calculate using AB2 variable timestep formula
-    ynp1_AB2 = ab2_step(AB_dt, y_nphalf, ydot_nphalf,
-                        AB_dtprev, ydot_nmhalf)
+    y_np1_AB2 = ab2_step(AB_dt, y_nph, dy_nph,
+                        AB_dtprev, dy_nmh)
 
 
-    # Choose an estimate for the time derivatives of y at time tn
+    # Choose an estimate for the derivatives of y at time t_{n+0.5}
     # ============================================================
 
     # # Finite difference dy/dt from neighbouring y values
-    # ydotn = (ynp1_MP - ynm1_MP)/(dt + dtprev)
+    # dy_n = (y_np1_MP - y_nm1_MP)/(dt + dtprev)
 
-    # Average of midpoints. Accuracy should be O(h^2)?
-    ydotn = (ydot_nphalf + ydot_nmhalf) / 2
+    # # Average of midpoints. Accuracy should be O(h^2)?
+    # dy_n = (dy_nph + dy_nmh) / 2
 
-    # Ignore d2y/dt2 (conservative estimate?).
-    ydotdotn = 0.0
+    # Ignore d2y/dt2 (conservative estimate).
+    ddy_nph = 0.
 
     # # Finite difference dy2/dt2 from neighbouring dy values. Not sure on
     # # the accuracy here...
-    # ydotdotn = (ydot_nphalf - ydot_nmhalf) / (dt/2 + dtprev/2)
+    # ddy_n = (dy_nph - dy_nmh) / (dt/2 + dtprev/2)
+
+    # dfdy term: can't calculate properly since it is a matrix (too slow)
+    # so write in terms of dfdt then assume dfdt = 0.
+    dfdt_nph = 0.
+    dfdy_nph = (ddy_nph + dfdt_nph) / dy_nph
 
     # Get the truncation error and scaling factor
     # ============================================================
 
-    error = (-6.0 * (ynp1_AB2 - ynp1_MP) * ydotn + 5.0 * dt**3 * ydotdotn**2 ) \
-        / (6.0 * ( -10.0 + ydotn))
+    # As derived in notes from 21/2/13
+    a = 4 / (1 + 3*(dtprev/dt))
+    error = (y_np1_AB2 - y_np1_MP) * a + (dt**3 * (1+a)/8) * ddy_nph * dfdy_nph
 
-    # Get a norm if we have an array, otherwise just take the absolute
-    # value
-    try: error_norm = sp.linalg.norm(error, 2)
-    except ValueError: error_norm = abs(error)
-
-    scaling_factor = ((target_error / error_norm)**0.33333)
-    #??ds what should the power here be?
-    # 0.5 works much better than 1/3, but Milan says it should always be
-    # 1/3 because it's a second order method...
-
-    print scaling_factor, dt
+    # Get a norm and scaling factor
+    error_norm = sp.linalg.norm(sp.array(error, ndmin=1), 2)
+    scaling_factor = ((target_error / error_norm)**0.3333)
 
     return _scale_timestep(dt, scaling_factor)
 
@@ -494,9 +486,9 @@ def test_ab2():
     def dydt(t, y): return y
     tmax = 1.0
 
-    # Oscillate dt a little to check variable timestep maths is ok.
+    # Oscillate dt to check variable timestep maths is ok.
     dt_base = 1e-4
-    input_dts = it.cycle([dt_base, 5*dt_base])
+    input_dts = it.cycle([dt_base, 15*dt_base])
 
     # Starting values
     ts = [0.0, 1e-6]
@@ -507,11 +499,14 @@ def test_ab2():
         dtprev = dts[-1]
         dt = input_dts.next()
 
-        ynp1 = ab2_step(dt, ys[-1], dydt(ts[-1], ys[-1]),
-                                 dtprev, dydt(ts[-2], ys[-2]))
-        ys.append(ynp1)
-        ts.append(ts[-1]+dt)
+        y_np1 = ab2_step(dt, ys[-1], dydt(ts[-1], ys[-1]),
+                        dtprev, dydt(ts[-2], ys[-2]))
+        ys.append(y_np1)
+        ts.append(ts[-1] + dt)
         dts.append(dt)
+
+    # plt.plot(ts, ys, 'x', ts, map(exp, ts))
+    # plt.show()
 
     utils.assertAlmostEqual(ys[-1], exp(ts[-1]), 1e-5)
 
@@ -572,34 +567,44 @@ def test_adaptive_dt():
 
     # Aux checking function
     def check_adaptive_dt(method, tol, steps):
-        def residual(ts, ys, dydt): return ys - dydt
+        def residual(ts, y, dydt): return y - dydt
         tmax = 1.0
-        ys, ts = odeint(residual, [exp(0.0)], tmax, dt = 1e-6,
+        ys, ts = odeint(residual, [exp(0.0)], tmax, dt = 1e-3,
                         method = method, target_error = tol)
 
         # dts = utils.ts2dts(ts)
-        # plt.plot(ts,ys,'--', ts, map(exp, ts))
+        # plt.plot(ts, ys, 'x', ts, map(exp, ts))
         # dts = utils.ts2dts(ts)
         # plt.figure()
         # plt.plot(ts[:-1],dts)
         # plt.show()
 
-        print "nsteps =", len(ys)
+        # Total error is bounded by roughly n_steps * LTE, add a "fudge
+        # factor" of 10 because LTE is only an estimate.
+        overall_tol = len(ys) * tol * 10
 
-        utils.assertAlmostEqual(ys[-1][0], exp(tmax), tol * 5)
+        print "nsteps =", len(ys)
+        print "error = ", abs(ys[-1][0] - exp(tmax))
+        print "tol = ", overall_tol
+
+        utils.assertAlmostEqual(ys[-1][0], exp(tmax), overall_tol)
         utils.assertAlmostEqual(len(ys), steps, steps * 0.1)
 
     methods = [('bdf2 ab', 1e-3, 382),
-               ('midpoint ab', 1e-3, 105),
+               ('midpoint ab', 1e-4, 51),
                ]
     for meth, requested_tol, allowed_steps in methods:
         yield check_adaptive_dt, meth, requested_tol, allowed_steps
 
 
 def test_local_truncation_error():
+
+    # We can't write a comparable midpoint lte calculation function because
+    # we calculate it using values at the midpoint between time steps
+    # (c.f. other lte functions which use values at time steps).
     tests = [(TrapezoidRuleResidual(), trapezoid_lte),
              (bdf2_residual, bdf2_lte),
-             (midpoint_residual, midpoint_lte),
+              #(midpoint_residual, midpoint_lte),
               #(bdf1_residual, bdf1_lte),
               ]
 
