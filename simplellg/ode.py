@@ -83,12 +83,13 @@ def _timestep_scheme_dispatcher(label):
         raise ValueError(message)
 
 
-def higher_order_start(order, func, ys, ts, dt):
-    """ Run a few steps of midpoint method, useful for generating extra
-    initial data for multi-step methods.
+def higher_order_start(order, func, ys, ts):
+    """ Run a few steps of midpoint method with a very small timestep.
+    Useful for generating extra initial data for multi-step methods.
     """
+    starting_dt = 1e-6
     while len(ys) < order:
-        ys, ts = _odeint(func, ys, ts, dt, ts[-1] + dt,
+        ys, ts = _odeint(func, ys, ts, starting_dt, ts[-1] + starting_dt,
                          midpoint_residual)
     return ys, ts
 
@@ -118,7 +119,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
             dfdy_function=None):
 
     if initialisation_actions is not None:
-        ys, ts = initialisation_actions(func, ys, ts, dt)
+        ys, ts = initialisation_actions(func, ys, ts)
 
     # Main timestepping loop
     # ============================================================
