@@ -42,6 +42,9 @@ def assertListAlmostEqual(list_a, list_b, tol = 1e-9):
     for a, b in zip(list_a, list_b):
         assert(abs(a - b) < tol)
 
+def assertListAlmostZero(values, tol = 1e-9):
+    for a in values:
+        assert(abs(a) < tol)
 
 # Spherical polar coordinates asserts
 def assertAziInRange(sph):
