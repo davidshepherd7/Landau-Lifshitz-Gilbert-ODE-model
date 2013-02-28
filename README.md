@@ -19,4 +19,8 @@ Run self tests with
 
     nosetests --all-modules.
 
-(requires the nose package, python-nose on Debian based systems).
+(requires the nose package:
+
+    sudo apt-get install python-nose
+    
+on Debian based systems).
