@@ -24,6 +24,37 @@ def unzip(iterable_of_iterables):
     return zip(*iterable_of_iterables)
 
 
+def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
+    """Run function with all combinations of parameters in parallel using
+    all available cores.
+
+    parameter_lists should be a list of lists of parameters,
+    """
+
+    import multiprocessing
+
+    # Generate a complete set of combinations of parameters
+    parameter_sets = it.product(*parameter_lists)
+
+    # For debugging we often need to run in serial (to get useful stack
+    # traces).
+    if serial_mode:
+        results_iterator = it.imap(function, parameter_sets)
+         # Force evaluation (to be exactly the same as in parallel)
+        results_iterator = list(results_iterator)
+
+    else:
+        # Run in all parameter sets in parallel
+        pool = multiprocessing.Pool()
+        results_iterator = pool.imap_unordered(function, parameter_sets)
+        pool.close()
+
+        # wait for everything to finish
+        pool.join()
+
+    return results_iterator
+
+
 # Testing helpers
 # ============================================================
 
@@ -261,3 +292,22 @@ class TestCoordinateConversion(unittest.TestCase):
     def test_polar_range(self):
         for sph in self.sphs:
             assertPolarInRange(sph)
+
+
+def example_f(p):
+    x, y = p
+    return cos(x) + sin(y)
+
+
+def test_parallel_sweep():
+    xs = sp.linspace(-pi, +pi, 30)
+    ys = sp.linspace(-pi, +pi, 30)
+
+    parallel_result = list(parallel_parameter_sweep(example_f, [xs, ys]))
+    serial_result = list(parallel_parameter_sweep(example_f, [xs, ys], True))
+    exact_result = map(example_f, it.product(xs, ys))
+
+    # Use sets for the comparison because the parallel computation destroys
+    # any ordering we had before (and sets order their elements).
+    assertListAlmostEqual(set(parallel_result), set(exact_result))
+    assertListAlmostEqual(serial_result, exact_result)
