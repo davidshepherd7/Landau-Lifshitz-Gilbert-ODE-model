@@ -256,11 +256,26 @@ def ts2dtn(ts):
 def ts2dtnm1(ts):
     return ts[-2] - ts[-3]
 
+
+# Matrices
+# ============================================================
+
+def skew(vector_with_length_3):
+    v = vector_with_length_3
+
+    if len(v) != 3:
+        raise TypeError("skew is only defined for vectors of length 3")
+
+    return sp.array([[0, -v[2], v[1]],
+                     [v[2], 0, -v[0]],
+                     [-v[1], v[0], 0]])
+
 # Test this file's code
 # ============================================================
 
 import unittest
 from random import random
+import nose.tools as nt
 
 
 class TestCoordinateConversion(unittest.TestCase):
@@ -311,3 +326,22 @@ def test_parallel_sweep():
     # any ordering we had before (and sets order their elements).
     assertListAlmostEqual(set(parallel_result), set(exact_result))
     assertListAlmostEqual(serial_result, exact_result)
+
+
+def test_skew_size_check():
+    xs = [sp.linspace(0.0, 1.0, 4), 1.0, sp.identity(3)]
+    for x in xs:
+        nt.assert_raises(TypeError, skew, [x])
+
+
+def test_skew():
+    xs = [sp.linspace(0.0, 1.0, 3), sp.zeros((3, 1)), [1, 2, 3], ]
+    a = sp.rand(3)
+
+    for x in xs:
+        # Anything crossed with itself is zero:
+        skew_mat = skew(x)
+        assertListAlmostZero(sp.dot(skew_mat, sp.array(x)))
+
+        # a x b = - b x a
+        assertListAlmostZero(sp.dot(skew_mat, a) + sp.dot(a, skew_mat))
