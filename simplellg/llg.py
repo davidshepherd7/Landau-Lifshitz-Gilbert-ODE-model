@@ -7,7 +7,8 @@ import simplellg.utils as utils
 import simplellg.ode as ode
 
 
-def absmod2pi(a): return abs(a % (2 * pi))
+def absmod2pi(a):
+    return abs(a % (2 * pi))
 
 
 def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
@@ -53,9 +54,9 @@ def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
     # polar angle, phi = azimuthal angle.
     residual = sp.empty((2))
     residual[0] = dmpoldt + (alpha * sin(mpol) * dmazidt) \
-      + (gamma/Ms) *(1.0/sin(mpol)) * dEdmazi
+        + (gamma/Ms) * (1.0/sin(mpol)) * dEdmazi
     residual[1] = (sin(mpol) * dmazidt) \
-      - (gamma/Ms) * dEdmpol - (alpha * dmpoldt)
+        - (gamma/Ms) * dEdmpol - (alpha * dmpoldt)
 
     return residual
 
@@ -71,8 +72,8 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
     h_eff = Hvec
 
     residual = (alpha/Ms) * sp.cross(m_cart, dmdt_cart) \
-      - gamma * sp.cross(m_cart, h_eff) \
-      - dmdt_cart
+        - gamma * sp.cross(m_cart, h_eff) \
+        - dmdt_cart
     return residual
 
 
@@ -97,7 +98,7 @@ import matplotlib.pyplot as plt
 def test_llg_residuals():
     m0_sph = [0.0, pi/18]
     m0_cart = utils.sph2cart(tuple([1.0] + m0_sph))
-    m0_constrained = list(m0_cart) + [None] #??ds
+    m0_constrained = list(m0_cart) + [None]  # ??ds
 
     residuals = [(llg_cartesian_residual, m0_cart),
                  #(llg_spherical_residual, m0_sph),
@@ -115,14 +116,14 @@ def check_residual(residual, initial_m):
 
     # Timestep to a solution + convert to spherical
     m_list, result_times = ode.odeint(f_residual, sp.array(initial_m),
-                                      tmax, dt = 0.01)
+                                      tmax, dt=0.01)
     m_sph = [utils.array2sph(m) for m in m_list]
     result_pols = [m.pol for m in m_sph]
     result_azis = [m.azi for m in m_sph]
 
     # Calculate exact solutions
     exact_times, exact_azis = \
-      mlsn.calculate_equivalent_dynamics(mag_params, result_pols)
+        mlsn.calculate_equivalent_dynamics(mag_params, result_pols)
 
     # Check
     utils.assertListAlmostEqual(exact_azis, result_azis, 1e-3)

@@ -17,9 +17,9 @@ def llg_state_energy(sph, mag_params):
     Ignore stress and magnetostriction.
     """
     return exchange_energy(sph, mag_params) \
-      + magnetostatic_energy(sph, mag_params) \
-      + magnetocrystalline_anisotropy_energy(sph, mag_params) \
-      + zeeman_energy(sph, mag_params)
+        + magnetostatic_energy(sph, mag_params) \
+        + magnetocrystalline_anisotropy_energy(sph, mag_params) \
+        + zeeman_energy(sph, mag_params)
 
 
 def exchange_energy(sph, mag_params):
@@ -77,12 +77,12 @@ def recompute_alpha(sph_start, sph_end, t_start, t_end, mag_params):
     dEdt = dE / dt
 
     # Estimate dMagentisation / dTime then take sum of squares
-    dm = [m2 - m1 for m1, m2 in \
+    dm = [m2 - m1 for m1, m2 in
           zip(utils.sph2cart(sph_start), utils.sph2cart(sph_end))]
-    dmdt_sq_sum = sum( [(dm_i / dt)**2 for dm_i in dm] )
+    dmdt_sq_sum = sum([(dm_i / dt)**2 for dm_i in dm])
 
     # dE should be negative so the result should be positive.
-    return - (1/(Ms**2)) * ( dEdt / dmdt_sq_sum)
+    return - (1/(Ms**2)) * (dEdt / dmdt_sq_sum)
 
 
 def recompute_alpha_list(m_sph_list, t_list, mag_params):
@@ -99,12 +99,9 @@ def recompute_alpha_list(m_sph_list, t_list, mag_params):
     return alpha_list
 
 
-
     #
-
 # Testing
 # ============================================================
-
 def test_zeeman():
     """Test zeeman energy for some simple cases.
     """
@@ -128,6 +125,7 @@ def test_zeeman():
 
     for m, H, ans in zip(m_tests, H_tests, answers):
         yield check_zeeman, m, H, ans
+
 
 def check_zeeman(m, H, ans):
     """Helper function for test_zeeman."""

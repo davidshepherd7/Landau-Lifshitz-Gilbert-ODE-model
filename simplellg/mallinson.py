@@ -23,15 +23,16 @@ def calculate_switching_time(magnetic_parameters, p_start, p_now):
 
     # Calculate the various parts of the expression
     prefactor = ((alpha**2 + 1)/(gamma * alpha)) \
-                  * (1.0 / (H**2 - Hk**2))
+        * (1.0 / (H**2 - Hk**2))
 
-    a = H * log( tan(p_now/2) / tan(p_start/2) )
-    b = Hk * log( (H - Hk*cos(p_start)) /
-                  (H - Hk*cos(p_now)) )
+    a = H * log(tan(p_now/2) / tan(p_start/2))
+    b = Hk * log((H - Hk*cos(p_start)) /
+                (H - Hk*cos(p_now)))
     c = Hk * log(sin(p_now) / sin(p_start))
 
     # Put everything together
     return prefactor * (a + b + c)
+
 
 def calculate_azimuthal(magnetic_parameters, p_start, p_now):
     """Calculate the azimuthal angle corresponding to switching from
@@ -39,7 +40,8 @@ def calculate_azimuthal(magnetic_parameters, p_start, p_now):
     """
     def azi_into_range(azi):
         a = azi % (2*pi)
-        if a < 0: a+= 2*pi
+        if a < 0:
+            a += 2*pi
         return a
 
     alpha = magnetic_parameters.alpha
@@ -47,10 +49,11 @@ def calculate_azimuthal(magnetic_parameters, p_start, p_now):
     no_range_azi = (-1/alpha) * log(tan(p_now/2) / tan(p_start/2))
     return azi_into_range(no_range_azi)
 
+
 def generate_dynamics(magnetic_parameters,
-                      start_angle = pi/18,
-                      end_angle = 17*pi/18,
-                      steps = 1000):
+                      start_angle=pi/18,
+                      end_angle=17*pi/18,
+                      steps=1000):
     """Generate a list of polar angles then return a list of corresponding
     m directions (in spherical polar coordinates) and switching times.
     """
@@ -62,14 +65,16 @@ def generate_dynamics(magnetic_parameters,
     sphs = [utils.SphPoint(1.0, azi, pol) for azi, pol in zip(azis, pols)]
 
     # Calculate switching times for these positions
-    times = [calculate_switching_time(mag_params, start_angle, p) for p in pols]
+    times = [calculate_switching_time(mag_params, start_angle, p)
+             for p in pols]
 
     return (sphs, times)
 
+
 def plot_dynamics(magnetic_parameters,
-                  start_angle = pi/18,
-                  end_angle = 17*pi/18,
-                  steps = 1000):
+                  start_angle=pi/18,
+                  end_angle=17*pi/18,
+                  steps=1000):
     """Plot exact positions given start/finish angles and magnetic
     parameters.
     """
@@ -78,13 +83,14 @@ def plot_dynamics(magnetic_parameters,
                                     end_angle, steps)
 
     sphstitle = "Path of m for " + str(magnetic_parameters) \
-      + "\n (starting point is marked)."
-    utils.plot_sph_points(sphs, title = sphstitle)
+        + "\n (starting point is marked)."
+    utils.plot_sph_points(sphs, title=sphstitle)
 
     timestitle = "Polar angle vs time for " + str(magnetic_parameters)
     utils.plot_polar_vs_time(sphs, times, title=timestitle)
 
     plt.show()
+
 
 def calculate_equivalent_dynamics(magnetic_parameters, polars):
     """Given a list of polar angles (and some magnetic parameters)
@@ -102,6 +108,7 @@ def calculate_equivalent_dynamics(magnetic_parameters, polars):
 
     return exact_times, exact_azis
 
+
 def plot_vs_exact(magnetic_parameters, ts, ms):
 
     # Extract lists of the polar coordinates
@@ -111,63 +118,60 @@ def plot_vs_exact(magnetic_parameters, ts, ms):
 
     # Calculate the corresponding exact dynamics
     exact_times, exact_azis = \
-      calculate_equivalent_dynamics(magnetic_parameters, pols)
+        calculate_equivalent_dynamics(magnetic_parameters, pols)
 
     # Plot
     plt.figure()
     plt.plot(ts, pols, '--',
-                 exact_times, pols)
+             exact_times, pols)
 
     plt.figure()
     plt.plot(pols, azis, '--',
-                pols, exact_azis)
+             pols, exact_azis)
 
     plt.show()
 
 
-
 # Test this file's code
 # ============================================================
-
 import unittest
 import energy
+
 
 class MallinsonSolverCheckerBase():
     """Base class to define the test functions but not actually run them.
     """
 
-    def base_init(self, magParameters = None, steps = 1000,
-                  p_start = pi/18):
+    def base_init(self, magParameters=None, steps=1000,
+                  p_start=pi/18):
 
         if magParameters is None:
             self.mag_params = utils.MagParameters()
         else:
             self.mag_params = magParameters
 
-        (self.sphs, self.times) = generate_dynamics(self.mag_params, steps = steps)
+        (self.sphs, self.times) = generate_dynamics(
+            self.mag_params, steps=steps)
 
         def partial_energy(sph):
             energy.llg_state_energy(sph, self.mag_params)
         self.energys = map(partial_energy, self.sphs)
-
 
     # Monotonically increasing time
     def test_increasing_time(self):
         for a, b in zip(self.times, self.times[1:]):
             assert(b > a)
 
-
     # Azimuthal is in correct range
     def test_azimuthal_in_range(self):
-        for sph in self.sphs: utils.assertAziInRange(sph)
-
+        for sph in self.sphs:
+            utils.assertAziInRange(sph)
 
     # Monotonically decreasing azimuthal angle except for jumps at 2*pi.
     def test_increasing_azimuthal(self):
         for a, b in zip(self.sphs, self.sphs[1:]):
             assert(a.azi > b.azi or
                    (a.azi - 2*pi <= 0.0 and b.azi >= 0.0))
-
 
     def test_damping_self_consistency(self):
         a2s = energy.recompute_alpha_list(self.sphs, self.times,
@@ -209,6 +213,6 @@ class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
 
 
 class TestMallinsonStartAngle(MallinsonSolverCheckerBase,
-                                     unittest.TestCase):
+                              unittest.TestCase):
     def setUp(self):
-        self.base_init(p_start = pi/2)
+        self.base_init(p_start=pi/2)

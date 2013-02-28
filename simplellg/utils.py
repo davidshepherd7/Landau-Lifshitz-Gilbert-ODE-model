@@ -12,6 +12,7 @@ import operator as op
 # General
 # ============================================================
 
+
 def unzip(iterable_of_iterables):
     """Inverse of zip. E.g. given a list of tuples returns a tuple of
     lists.
@@ -29,27 +30,34 @@ def unzip(iterable_of_iterables):
 # Some useful asserts. We explicitly use the assert command in each
 # (instead of defining the almost equal commands in terms of each
 # other) to make sure we get useful output from nose -d.
-def almost_equal(a, b, tol = 1e-9):
+def almost_equal(a, b, tol=1e-9):
     return abs(a - b) < tol
 
-def assertAlmostEqual(a, b, tol = 1e-9):
+
+def assertAlmostEqual(a, b, tol=1e-9):
     assert(abs(a - b) < tol)
 
-def assertAlmostZero(a, tol = 1e-9):
+
+def assertAlmostZero(a, tol=1e-9):
     assert(abs(a) < tol)
 
-def assertListAlmostEqual(list_a, list_b, tol = 1e-9):
+
+def assertListAlmostEqual(list_a, list_b, tol=1e-9):
     for a, b in zip(list_a, list_b):
         assert(abs(a - b) < tol)
 
-def assertListAlmostZero(values, tol = 1e-9):
+
+def assertListAlmostZero(values, tol=1e-9):
     for a in values:
         assert(abs(a) < tol)
 
 # Spherical polar coordinates asserts
+
+
 def assertAziInRange(sph):
     assert(sph.azi > 0 or almost_equal(sph.azi, 0.0))
     assert(sph.azi < 2*pi or almost_equal(sph.azi, 2*pi))
+
 
 def assertPolarInRange(sph):
     assert(sph.pol >= 0 and sph.pol <= pi)
@@ -61,6 +69,7 @@ def assertPolarInRange(sph):
 # Some data structures
 SphPoint = collections.namedtuple('SphPoint', ['r', 'azi', 'pol'])
 CartPoint = collections.namedtuple('CartPoint', ['x', 'y', 'z'])
+
 
 def cart2sph(cartesian_point):
     """
@@ -77,13 +86,17 @@ def cart2sph(cartesian_point):
 
     # Get azimuthal then shift from [-pi,pi] to [0,2pi]
     azi = atan2(y, x)
-    if azi < 0: azi += 2*pi
+    if azi < 0:
+        azi += 2*pi
 
     # Dodge the problem at central singular point...
-    if r < 1e-9: polar = 0
-    else: polar = acos(z/r)
+    if r < 1e-9:
+        polar = 0
+    else:
+        polar = acos(z/r)
 
     return SphPoint(r, azi, polar)
+
 
 def sph2cart(spherical_point):
     """
@@ -97,6 +110,7 @@ def sph2cart(spherical_point):
     z = r * cos(pol)
 
     return CartPoint(x, y, z)
+
 
 def array2sph(point_as_array):
     """ Convert from an array representation to a SphPoint.
@@ -120,7 +134,7 @@ def array2sph(point_as_array):
         raise IndexError
 
 
-def plot_sph_points(sphs, title = 'Path of m'):
+def plot_sph_points(sphs, title='Path of m'):
     carts = map(sph2cart, sphs)
 
     fig = plt.figure()
@@ -135,7 +149,7 @@ def plot_sph_points(sphs, title = 'Path of m'):
     ax.scatter(start_point.x, start_point.y, start_point.z)
 
     # Draw on z-axis
-    ax.plot([0,0], [0,0], [-1,1], '--')
+    ax.plot([0, 0], [0, 0], [-1, 1], '--')
 
     plt.title(title)
 
@@ -146,7 +160,8 @@ def plot_sph_points(sphs, title = 'Path of m'):
 
     return fig
 
-def plot_polar_vs_time(sphs, times, title = 'Polar angle vs time'):
+
+def plot_polar_vs_time(sphs, times, title='Polar angle vs time'):
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -183,25 +198,32 @@ class MagParameters():
     def __repr__(self):
         """Return a string representation of the parameters.
         """
-        return "alpha = "+ str(self.alpha) \
-          + ", gamma = "+ str(self.gamma) +",\n" \
-          + "H = "+ str(self.Hvec) \
-          + ", Hk = "+ str(self.Hk) \
-          + ", Ms = "+ str(self.Ms)
+        return "alpha = " + str(self.alpha) \
+            + ", gamma = " + str(self.gamma) + ",\n" \
+            + "H = " + str(self.Hvec) \
+            + ", Hk = " + str(self.Hk) \
+            + ", Ms = " + str(self.Ms)
 
 # Smaller helper functions
 # ============================================================
 
+
 def relative_error(exact, estimate):
     return abs(exact - estimate) / exact
+
 
 def dts_from_ts(ts):
     return list(it.imap(op.sub, ts[1:], ts))
 
 ts2dts = dts_from_ts
 
-def ts2dtn(ts): return ts[-1] - ts[-2]
-def ts2dtnm1(ts): return ts[-2] - ts[-3]
+
+def ts2dtn(ts):
+    return ts[-1] - ts[-2]
+
+
+def ts2dtnm1(ts):
+    return ts[-2] - ts[-3]
 
 # Test this file's code
 # ============================================================
@@ -209,27 +231,33 @@ def ts2dtnm1(ts): return ts[-2] - ts[-3]
 import unittest
 from random import random
 
+
 class TestCoordinateConversion(unittest.TestCase):
 
     # Pick some coordinate lists to try out
     def setUp(self):
-        def carttuple(x): return (x*random(), x*random(), x*random())
+        def carttuple(x):
+            return (x*random(), x*random(), x*random())
         self.carts = map(carttuple, sp.linspace(0, 2, 20))
         self.sphs = map(cart2sph, self.carts)
 
     # Check that applying both operations gives back the same thing
     def check_cart_sph_composition(self, cart, sph):
         assertListAlmostEqual(cart, sph2cart(sph))
+
     def test_composition_is_identity(self):
         for (cart, sph) in zip(self.carts, self.sphs):
             self.check_cart_sph_composition(cart, sph)
 
     # Check that the azimuthal angle is in the correct range
     def test_azi_range(self):
-        for sph in self.sphs: assertAziInRange(sph)
+        for sph in self.sphs:
+            assertAziInRange(sph)
+
     def test_azimuthal_edge_cases(self):
         assertAlmostEqual(cart2sph((-1, -1, 0)).azi, 5*pi/4)
 
     # Check that the polar angle is in the correct range
     def test_polar_range(self):
-        for sph in self.sphs: assertPolarInRange(sph)
+        for sph in self.sphs:
+            assertPolarInRange(sph)
