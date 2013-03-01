@@ -5,7 +5,7 @@ set -o nounset
 
 # # To install just do:
 # cd .git/hooks/
-# ln -s ../../precommit-hook.sh
+# ln -s ../../pre-commit
 
 
 # Use autopep8 to clean up whitespace etc. (also store and print a diff of
