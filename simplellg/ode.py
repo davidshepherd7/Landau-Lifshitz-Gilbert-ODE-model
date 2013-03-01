@@ -445,7 +445,7 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
     # df/dy term (note: this should be a square matrix of size len(y))
     if dfdy_function is not None:
-        dfdy_nph = dfdy_function(t_nph)
+        dfdy_nph = dfdy_function(t_nph, y_nph, dy_nph)
     else:
         # Can't calculate so just ignore it
         dfdy_nph = sp.zeros((len(ys[-1]), len(ys[-1])))
