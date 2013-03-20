@@ -58,13 +58,26 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
 # Testing helpers
 # ============================================================
 
-# Some useful asserts. We explicitly use the assert command in each
-# (instead of defining the almost equal commands in terms of each
-# other) to make sure we get useful output from nose -d.
+
 def almost_equal(a, b, tol=1e-9):
     return abs(a - b) < tol
 
 
+def abs_list_diff(list_a, list_b):
+    return [abs(a - b) for a, b in zip(list_a, list_b)]
+
+
+def list_almost_zero(list_x, tol=1e-9):
+    return max(list_x) < tol
+
+
+def list_almost_equal(list_a, list_b, tol=1e-9):
+    return list_almost_zero(abs_list_diff(list_a, list_b, tol))
+
+
+# Some useful asserts. We explicitly use the assert command in each
+# (instead of defining the almost equal commands in terms of each
+# other) to make sure we get useful output from nose -d.
 def assertAlmostEqual(a, b, tol=1e-9):
     assert(abs(a - b) < tol)
 
@@ -82,9 +95,8 @@ def assertListAlmostZero(values, tol=1e-9):
     for a in values:
         assert(abs(a) < tol)
 
+
 # Spherical polar coordinates asserts
-
-
 def assertAziInRange(sph):
     assert(sph.azi > 0 or almost_equal(sph.azi, 0.0))
     assert(sph.azi < 2*pi or almost_equal(sph.azi, 2*pi))
