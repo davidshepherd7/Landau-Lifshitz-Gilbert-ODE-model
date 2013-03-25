@@ -362,7 +362,7 @@ def midpoint_lte(dt_n, ys, dys, d2ys, d3ys, dfdy):
 
     # dfdy should be able to be a function but not implelmented yet
 
-    return ((dt_n**3)/24) *( d3ys[-1] - sp.dot(dfdy, d2ys[-1]))
+    return ((dt_n**3)/24) * (d3ys[-1] - sp.dot(dfdy, d2ys[-1]))
 
 
 def bdf2_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
@@ -425,8 +425,8 @@ class Interpolator(object):
 
         # Interpolate
         interpolated_values = \
-          self.underlying_interpolator(ts[a:b], ys[a:b],
-                                       output_points, der=[0,1,2])
+            self.underlying_interpolator(ts[a:b], ys[a:b],
+                                         output_points, der=[0, 1, 2])
 
         # Unpack derivatives
         y_nph, dy_nph, ddy_nph = list(interpolated_values)
@@ -485,10 +485,8 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator):
     # derivative.
     y_np1_FE = y_nph + (dt_n/2) * dy_nmid
 
-
     # Use an AB2 predictor to eliminate the dddy_nph term
     # ============================================================
-
     AB_dt_n = 0.5*dt_n
     AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
 
@@ -525,6 +523,21 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator):
 # ============================================================
 import matplotlib.pyplot as plt
 from example_residuals import *
+
+
+def check_problem(method, residual, exact, tol=1e-3, tmax=5.0):
+    """Helper function to run odeint with a specified method for a problem
+    and check that the solution matches.
+    """
+
+    ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
+                    method=method, target_error=tol)
+
+    # Total error should be bounded by roughly n_steps * LTE
+    overall_tol = len(ys) * tol * 10
+    utils.assertListAlmostEqual(ys, map(exact, ts), overall_tol)
+
+    return ts, ys
 
 
 def test_bad_timestep_handling():
@@ -637,45 +650,19 @@ def test_vector_timesteppers():
 
 def test_adaptive_dt():
 
-    # Aux checking function
-    def check_adaptive_dt(method, tol, steps, residual, exact):
-        tmax = 6.0
-        ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
-                        method=method, target_error=tol)
-
-        # dts = utils.ts2dts(ts)
-        # plt.plot(ts, ys, 'x', ts, map(exact, ts))
-        # dts = utils.ts2dts(ts)
-        # plt.title(str(residual))
-
-        # plt.figure()
-        # plt.plot(ts[:-1],dts)
-        # plt.show()
-
-        # Total error is bounded by roughly n_steps * LTE
-        overall_tol = len(ys) * tol * 10
-
-        print "nsteps =", len(ys)
-        print "max error = ", max(utils.abs_list_diff(ys, map(exact, ts)))[0]
-        print "tol = ", overall_tol
-
-
-        utils.assertListAlmostEqual(ys, map(exact, ts), overall_tol)
-        # utils.assertAlmostEqual(len(ys), steps, steps * 0.1)
-
     methods = [('bdf2 ab', 1e-3, 382),
                ('midpoint ab', 1e-3, 51),
                ]
+
     functions = [(exp_residual, exp),
                  (exp_of_minus_t_residual, lambda x: exp(-1*x)),
                  (poly_residual, lambda t: t**4 + t**2),
                  (exp_of_poly_residual, lambda t: exp(t - t**3))
                  ]
 
-    for meth, requested_tol, allowed_steps in methods:
+    for meth, tol, allowed_steps in methods:
         for residual, exact in functions:
-            yield check_adaptive_dt, meth, requested_tol, allowed_steps, \
-                residual, exact
+            yield check_problem, meth, residual, exact, tol
 
 
 def test_local_truncation_error():
@@ -737,28 +724,14 @@ def test_sharp_dt_change():
 
     # Parameters, don't fiddle with these too much or it might miss the
     # step altogether...
-    alpha = 50
+    alpha = 20
     step_time = 0.4
     tmax = 2.5
-    tol = 1e-6
+    tol = 1e-4
 
     # Set up functions
     residual = par(tanh_residual, alpha=alpha, step_time=step_time)
     exact = par(tanh_exact, alpha=alpha, step_time=step_time)
 
-    # Time step
-    ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-5,
-                    method='midpoint ab', target_error=tol)
-
-    # # Plot
-    # exact_ts = sp.linspace(0, tmax, 1000)
-    # plt.plot(ts, ys, 'x', exact_ts, map(exact, exact_ts), '-', ms=8)
-    # plt.plot(ts[1:], utils.ts2dts(ts))
-    # plt.show()
-
-    # Total error should be bounded by roughly n_steps * LTE
-    overall_tol = len(ys) * tol * 10
-    utils.assertListAlmostEqual(ys, map(exact, ts), overall_tol)
-
-    # Return values in case we want them for something else
-    return ts, ys
+    # Run it
+    return check_problem('midpoint ab', residual, exact, tol=tol)
