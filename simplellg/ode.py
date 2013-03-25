@@ -731,3 +731,34 @@ def test_local_truncation_error():
 
     for meth_res, tol_func in tests:
         yield check_local_truncation_error, meth_res, tol_func
+
+
+def test_sharp_dt_change():
+
+    # Parameters, don't fiddle with these too much or it might miss the
+    # step altogether...
+    alpha = 50
+    step_time = 0.4
+    tmax = 2.5
+    tol = 1e-6
+
+    # Set up functions
+    residual = par(tanh_residual, alpha=alpha, step_time=step_time)
+    exact = par(tanh_exact, alpha=alpha, step_time=step_time)
+
+    # Time step
+    ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-5,
+                    method='midpoint ab', target_error=tol)
+
+    # # Plot
+    # exact_ts = sp.linspace(0, tmax, 1000)
+    # plt.plot(ts, ys, 'x', exact_ts, map(exact, exact_ts), '-', ms=8)
+    # plt.plot(ts[1:], utils.ts2dts(ts))
+    # plt.show()
+
+    # Total error should be bounded by roughly n_steps * LTE
+    overall_tol = len(ys) * tol * 10
+    utils.assertListAlmostEqual(ys, map(exact, ts), overall_tol)
+
+    # Return values in case we want them for something else
+    return ts, ys
