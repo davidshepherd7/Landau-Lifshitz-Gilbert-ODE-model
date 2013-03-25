@@ -735,3 +735,23 @@ def test_sharp_dt_change():
 
     # Run it
     return check_problem('midpoint ab', residual, exact, tol=tol)
+
+# def test_with_stiff_problem():
+#     """Check that midpoint ab works well for stiff problem (i.e. has a
+#     non-insane number of time steps).
+#     """
+#     # Slow test!
+
+#     mu = 1000
+#     residual = par(van_der_pol_residual, mu=mu)
+
+#     ys, ts = odeint(residual, [2.0, 0], 1000.0, dt=1e-6,
+#                     method='bdf2 ab', target_error=1e-3)
+
+#     print len(ts)
+#     plt.plot(ts, [y[0] for y in ys])
+#     plt.plot(ts[1:], utils.ts2dts(ts))
+#     plt.show()
+
+#     n_steps = len(ts)
+#     assert n_steps < 5000

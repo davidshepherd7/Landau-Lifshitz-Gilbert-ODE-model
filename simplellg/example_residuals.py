@@ -1,7 +1,7 @@
 # Some pairs of residuals and exact solutions for testing with:
 
 from scipy import exp, tanh
-
+import scipy as sp
 
 def exp_residual(ts, y, dydt): return y - dydt
 
@@ -26,3 +26,12 @@ def tanh_residual(t, y, dydt, alpha=1.0, step_time=1.0):
     return (alpha * (1 - (tanh(alpha*(t - step_time)))**2))/2 - dydt
 def tanh_exact(t, alpha=1.0, step_time=1.0):
     return (tanh(alpha*(t - step_time)) + 1)/2
+
+
+# Stiff examples
+def van_der_pol_residual(t, y, dydt, mu=1000):
+    return sp.array([
+        dydt[0] - y[1],
+        dydt[1] - mu * (1 - y[0]**2)*y[1] + y[0]
+        ])
+# No exact solution for van der pol...
