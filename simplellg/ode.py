@@ -71,7 +71,7 @@ def _timestep_scheme_dispatcher(label):
 
     elif label == 'midpoint ab':
         n_start = 4
-        adaptor = par(midpoint_ab_time_adaptor,
+        adaptor = par(midpoint_ab_time_adaptor(),
                       interpolator=krogh_interpolate)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
@@ -441,83 +441,83 @@ class Interpolator(object):
         return y_nph, dy_nph, ddy_nph
 
 
-def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator):
+class midpoint_ab_time_adaptor(object):
+    """ See notes: 19-20/3/2013 for algebra and explanations.
+
+    Use a class to get some storage for previous values.
     """
 
-    See notes: 19-20/3/2013 for algebra and explanations.
-    """
+    def __call__(self, ts, ys, target_error, interpolator):
 
-    # Notation:
-    # _nph denotes exact values at time t_nph
-    # _mid denotes approximations using (y_np1 + yn)/2
+        # Notation:
+        # _nph denotes exact values at time t_nph
+        # _mid denotes approximations using (y_np1 + yn)/2
+        # Set up some variables
+        # ============================================================
+        dt_n = ts[-1] - ts[-2]
+        dt_nm1 = ts[-2] - ts[-3]
 
-    # Set up some variables
-    # ============================================================
-    dt_n = ts[-1] - ts[-2]
-    dt_nm1 = ts[-2] - ts[-3]
+        y_np1_MP = ys[-1]
+        y_n_MP = ys[-2]
+        y_nm1_MP = ys[-3]
 
-    y_np1_MP = ys[-1]
-    y_n_MP = ys[-2]
-    y_nm1_MP = ys[-3]
+        t_n = ts[-2]
+        t_nph = (ts[-1] + ts[-2])/2
 
-    t_n = ts[-2]
-    t_nph = (ts[-1] + ts[-2])/2
-    # t_nmh = (ts[-2] + ts[-3])/2
+        y_nmid = (y_np1_MP + y_n_MP)/2
+        dy_nmid = (y_np1_MP - y_n_MP)/dt_n
+        dy_nm1_mid = (ys[-3] - ys[-2])/dt_nm1
 
-    y_nmid = (y_np1_MP + y_n_MP)/2
-    dy_nmid = (y_np1_MP - y_n_MP)/dt_n
+        # Interpolate exact value and derivatives at t_nph
+        # ============================================================
+        n_interpolation_points = 4
+        a = -n_interpolation_points - 1
+        interps = interpolator(ts[a:-1], ys[a:-1], [t_n, t_nph], der=[0, 1])
 
-    # ??ds
-    exact = exp
+        # Unpack (can't get "proper" unpacking to work)
+        dy_n = interps[1][0]
+        y_nph = interps[0][1]
+        dy_nph = interps[1][1]
 
-    # Interpolate exact value and derivatives at t_nph
-    # ============================================================
-    n_interpolation_points = 6
-    a = -n_interpolation_points - 1
-    b = -1
-    interps = interpolator(ts[a:b], ys[a:b], [t_n, t_nph], der=[0, 1])
+        # Get previous dy_nph value and store the present one ready for the
+        # next step.
+        try:
+            dy_nmh = self.dy_nmh
+        except AttributeError:
+            # Or if there isn't one stored just fudge it by using the
+            # midpoint value.
+            dy_nmh = dy_nm1_mid
+        self.dy_nmh = dy_nph
 
-    # Unpack (can't get "proper" unpacking to work)
-    dy_n = interps[0][1]
-    y_nph = interps[1][0]
-    dy_nph = interps[1][1]
+        # Calculate this part of the truncation error (see notes)
+        ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
 
-    # # print "***", dt_n**4, abs(dy_n - exp(ts[-2])), abs(y_nph - exp(t_nph)),
-    # # print abs(dy_nph - exp(t_nph))
-    # #??ds
-    # dy_n = sp.array([exact(t_n)])
-    # y_nph = sp.array([exact(t_nph)])
-    # dy_nph = sp.array([exact(t_nph)])
+        # Use an AB2 predictor to eliminate the dddy_nph term
+        # ============================================================
+        AB_dt_n = 0.5*dt_n
+        AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
 
-    #??ds
-    dy_nmh = (y_n_MP - y_nm1_MP)/dt_n
+        y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
+                             AB_dt_nm1, dy_nmh)
 
-    y_np1_AB = ab2_step(dt_n/2, y_nph, dy_nph, dt_n/2 + dt_nm1/2, dy_nmh)
-    a = dt_n*dy_nph + y_n_MP - y_np1_MP
+        # Get the truncation error, scaling factor and new time step size
+        # ============================================================
+        # Calculate (see notes)
+        midpoint_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
 
-    # Get the truncation error, scaling factor and new time step size
-    # ============================================================
+        # Get a norm
+        error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
 
-    # Calculate (see notes)
-    # midpoint_lte = -y_np1_MP - 4*y_nph + dt_n*dy_n + 2*dt_n*dy_nph + 5*y_n_MP
-    midpoint_lte = 4*(y_np1_MP - y_np1_AB) + 5*a
+        # Guard against division by zero
+        if error_norm < 1e-12:
+            scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
 
-    # print -y_np1_MP, -4*y_nph, dt_n*dy_n, 2*dt_n*dy_nph, 5*y_n_MP
-    print dt_n, midpoint_lte, (ys[-1] - exact(ts[-1]))/len(ys)
+        # Calculate scaling factor
+        else:
+            scaling_factor = ((target_error / error_norm)**0.3333)
 
-    # Get a norm
-    error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
-
-    # Guard against division by zero
-    if error_norm < 1e-12:
-        scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
-
-    # Calculate scaling factor
-    else:
-        scaling_factor = ((target_error / error_norm)**0.3333)
-
-    # Return the scaled timestep (function does lots of checks).
-    return _scale_timestep(dt_n, scaling_factor)
+        # Return the scaled timestep (function does lots of checks).
+        return _scale_timestep(dt_n, scaling_factor)
 
 
 def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator):
@@ -817,7 +817,7 @@ def test_sharp_dt_change():
     exact = par(tanh_exact, alpha=alpha, step_time=step_time)
 
     # Run it
-    return check_problem('midpoint fe ab', residual, exact, tol=tol)
+    return check_problem('midpoint ab', residual, exact, tol=tol)
 
 # def test_with_stiff_problem():
 #     """Check that midpoint fe ab works well for stiff problem (i.e. has a
@@ -829,12 +829,12 @@ def test_sharp_dt_change():
 #     residual = par(van_der_pol_residual, mu=mu)
 
 #     ys, ts = odeint(residual, [2.0, 0], 1000.0, dt=1e-6,
-#                     method='bdf2 ab', target_error=1e-3)
+#                     method='midpoint ab', target_error=1e-3)
 
-#     print len(ts)
-#     plt.plot(ts, [y[0] for y in ys])
-#     plt.plot(ts[1:], utils.ts2dts(ts))
-#     plt.show()
+#     # print len(ts)
+#     # plt.plot(ts, [y[0] for y in ys])
+#     # plt.plot(ts[1:], utils.ts2dts(ts))
+#     # plt.show()
 
 #     n_steps = len(ts)
 #     assert n_steps < 5000
