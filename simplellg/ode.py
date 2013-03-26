@@ -59,8 +59,8 @@ def _timestep_scheme_factory(label):
     if label == 'bdf2':
         return bdf2_residual, None, par(higher_order_start, 2)
 
-    elif label == 'bdf2 ab':
-        return bdf2_residual, bdf2_ab_time_adaptor,\
+    elif label == 'bdf2 mp':
+        return bdf2_residual, bdf2_mp_time_adaptor,\
             par(higher_order_start, 2)
 
     elif label == 'bdf1':
@@ -217,11 +217,15 @@ def bdf1_residual(base_residual, ts, ys):
 
 
 def bdf2_residual(base_residual, ts, ys):
+    """ Calculate residual at latest time and y-value with the bdf2
+    approximation for the y derivative.
+    """
     return base_residual(ts[-1], ys[-1], bdf2_dydt(ts, ys))
 
 
 def bdf2_dydt(ts, ys):
-    """Get dy/dt at time ts[-1]."""
+    """Get dy/dt at time ts[-1] (allowing for varying dt).
+    Gresho & Sani, pg. 715"""
     dt_n = ts[-1] - ts[-2]
     dt_nm1 = ts[-2] - ts[-3]
 
@@ -229,11 +233,13 @@ def bdf2_dydt(ts, ys):
     y_n = ys[-2]
     y_nm1 = ys[-3]
 
-    a = dt_n/((2*dt_n + dt_nm1)*dt_nm1)
-    prefactor = (2*dt_n + dt_nm1)/(dt_n + dt_nm1)
-    alphas = [1.0/dt_n, -1.0/dt_n - a, a]
+    # Copied from oomph-lib (algebraic rearrangement of G&S forumla).
+    weights = [1.0/dt_n + 1.0/(dt_n + dt_nm1),
+               - (dt_n + dt_nm1)/(dt_n * dt_nm1),
+               dt_n / ((dt_n + dt_nm1) * dt_nm1)]
 
-    dydt = prefactor * sp.dot(alphas, [y_np1, y_n, y_nm1])
+    dydt = sp.dot(weights, [y_np1, y_n, y_nm1])
+
     return dydt
 
 
@@ -373,7 +379,7 @@ def midpoint_lte(dt_n, ys, dys, d2ys, d3ys, dfdy):
     return ((dt_n**3)/24) * (d3ys[-1] - sp.dot(dfdy, d2ys[-1]))
 
 
-def bdf2_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
+def bdf2_mp_time_adaptor(ts, ys, target_error, dfdy_function=None):
     """ Calculate a new timestep size based on estimating the error from
     the previous timestep. Weighting numbers stolen from oopmh-lib.
     """
@@ -390,20 +396,30 @@ def bdf2_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
     y_n = ys[-2]
     y_nm1 = ys[-3]
 
-    # Fudge the first step
-    if len(ys) < 4:
-        return dt_n
-
-    # Invert bdf to get predictor data (using the exact same function as
+    # Invert bdf2 to get predictor data (using the exact same function as
     # was used in the residual calculation).
     dy_n = bdf2_dydt(ts, ys)
 
-    # Calculate predictor value (variable dt explicit mid point rule)
-    y_np1_EMP = y_n + (1 + dtr)*dt_n*dy_n - (dtr**2)*y_n + (dtr**2)*y_nm1
+    # # Calculate predictor value (variable dt explicit mid point rule) --G&S version
+    # y_np1_EMP = y_n + (1 + dtr)*dt_n*dy_n - (dtr**2)*y_n + (dtr**2)*y_nm1
 
-    # Calculate truncation error
-    error = (y_np1 - y_np1_EMP) * ((1 + dt_nm1/dt_n)**2) /\
-        (1 + 3*(dt_nm1/dt_n) + 4*(dt_nm1/dt_n)**2 + 2*(dt_nm1/dt_n)**3)
+    # Calculate predictor value (variable dt explicit mid point rule) --oomph-
+    # lib version
+    y_np1_EMP =  (1.0 - dtr**2) * y_n\
+        + (dtr**2) * y_nm1 \
+        + (1.0 + dtr)*dt_n * dy_n
+
+    # # Calculate truncation error -- G&S
+    # error = (y_np1 - y_np1_EMP) * ((1 + dt_nm1/dt_n)**2) /\
+    #     (1 + 3*(dt_nm1/dt_n) + 4*(dt_nm1/dt_n)**2 + 2*(dt_nm1/dt_n)**3)
+
+    dtrinv = 1.0 / dtr
+    error_weight = ((1.0 + dtrinv)**2) / \
+        (1.0 + 3.0*dtrinv + 4.0 * dtrinv**2
+         + 2.0 * dtrinv**3)
+
+    # Calculate truncation error -- oomph-lib
+    error = (y_np1 - y_np1_EMP) * error_weight
 
     error_norm = sp.linalg.norm(error, 2)
 
@@ -625,7 +641,7 @@ def test_bad_timestep_handling():
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
     ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
-                     bdf2_residual, tol, bdf2_ab_time_adaptor)
+                     bdf2_residual, tol, bdf2_mp_time_adaptor)
 
     print map(lambda x, y: abs(x-y), ys, map(exp3_exact, ts))
     print ts
@@ -718,7 +734,7 @@ def test_vector_timesteppers():
 
 def test_adaptive_dt():
 
-    methods = [('bdf2 ab', 1e-3, 382),
+    methods = [('bdf2 mp', 1e-3, 382),
                ('midpoint fe ab', 1e-3, 51),
                ('midpoint ab', 1e-3, 51),
                ]
@@ -732,61 +748,6 @@ def test_adaptive_dt():
     for meth, tol, allowed_steps in methods:
         for residual, exact in functions:
             yield check_problem, meth, residual, exact, tol
-
-
-def test_local_truncation_error():
-
-    tests = [(TrapezoidRuleResidual(), trapezoid_lte),
-             (bdf2_residual, bdf2_lte),
-             (midpoint_residual, par(midpoint_lte, dfdy=0.)),
-             #(bdf1_residual, bdf1_lte),
-             ]
-    # We can't write a comparable midpoint lte calculation function because
-    # we calculate it using values at the midpoint between time steps
-    # (c.f. other lte functions which use values at time steps).
-
-    # Auxilary function
-    def check_local_truncation_error(method_residual, error_function):
-        """Test that a single timestep of the method has local truncation
-        error below that given by the appropriate function.
-        """
-        residual = exp_residual
-        value = exp
-        d1y = exp
-        d2y = exp
-        d3y = exp
-
-        tstart = 2.0
-
-        # Can't do smaller than ~1e-4 because in second order methods lte
-        # is ~dt^3 and (1e-4)^3 = 1e-12 which is approaching numerical
-        # error.
-        for dt in [1e-2, 1e-3, 5e-4]:
-
-            # Additional points for higher order methods
-            ts = [tstart - 1e-6, tstart]
-            ys = map(exp, ts)
-            tmax = tstart + dt
-
-            ys, ts = _odeint(residual, ys, ts, dt,
-                             tmax, method_residual)
-
-            lte_analytic = error_function(dt, map(value, ts), map(d1y, ts),
-                                          map(d2y, ts), map(d3y, ts))
-
-            # Check
-            actual_error = ys[-1] - value(tmax)
-            print "actual_error =", actual_error
-            print "calculated error =", lte_analytic
-            print
-
-            # assert(actual_error < lte_analytic)
-            utils.assertAlmostEqual(
-                actual_error, lte_analytic, abs(2*lte_analytic))
-            # ??ds Not sure exactly how close estimate will be...
-
-    for meth_res, tol_func in tests:
-        yield check_local_truncation_error, meth_res, tol_func
 
 
 def test_sharp_dt_change():
