@@ -50,7 +50,7 @@ class FailedTimestepError(Exception):
             + repr(self.new_dt)
 
 
-def _timestep_scheme_dispatcher(label):
+def _timestep_scheme_factory(label):
     """Pick the functions needed for this method. Returns functions for a
     time residual, a timestep adaptor and any intialisation actions needed.
     """
@@ -72,13 +72,15 @@ def _timestep_scheme_dispatcher(label):
     elif label == 'midpoint ab':
         n_start = 4
         adaptor = par(midpoint_ab_time_adaptor(),
-                      interpolator=krogh_interpolate)
+                      interpolator=krogh_interpolate,
+                      n_interpolation_points=n_start)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'midpoint fe ab':
         n_start = 4
-        adaptor = par(midpoint_fe_ab_time_adaptor,
-                      interpolator=Interpolator(n_start))
+        adaptor = par(midpoint_fe_ab_time_adaptor(),
+                      interpolator=krogh_interpolate,
+                      n_interpolation_points=n_start)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'trapezoid':
@@ -111,7 +113,7 @@ def odeint(func, y0, tmax, dt,
 
     # Select the method and adaptor
     time_residual, time_adaptor, initialisation_actions = \
-        _timestep_scheme_dispatcher(method)
+        _timestep_scheme_factory(method)
 
     ts = [0.0]  # List of times (floats)
     ys = [sp.array(y0, ndmin=1)]  # List of y vectors (ndarrays)
@@ -165,8 +167,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
-            except FailedTimestepError, exception:
-                dt = exception.new_dt
+            except FailedTimestepError, exception_data:
+                dt = exception_data.new_dt
                 continue
 
         # Update results storage (don't do this earlier in case the time
@@ -409,45 +411,16 @@ def bdf2_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
     return _scale_timestep(dt_n, scaling_factor)
 
 
-class Interpolator(object):
-    """ """
-
-    def __init__(self, n_points=4):
-
-        # Number of points to store
-        self.n_points = n_points
-
-        # Underlying interpolation function (don't use the object version
-        # of it because we want to use new points each time).
-        self.underlying_interpolator = krogh_interpolate
-
-    def __call__(self, ts, ys, output_points):
-
-        # Range of t and y values to use
-        a, b = -self.n_points-1, -1
-
-        # Interpolate
-        interpolated_values = \
-            self.underlying_interpolator(ts[a:b], ys[a:b],
-                                         output_points, der=[0, 1, 2])
-
-        # Unpack derivatives
-        y_nph, dy_nph, ddy_nph = list(interpolated_values)
-
-        # Store the dy value for use in the next time step
-        self.dy_nmh = dy_nph
-
-        # Return requested values
-        return y_nph, dy_nph, ddy_nph
-
-
 class midpoint_ab_time_adaptor(object):
     """ See notes: 19-20/3/2013 for algebra and explanations.
 
     Use a class to get some storage for previous values.
     """
+    #??ds don't like this very much, maybe I should/could use closures
+    # instead?
 
-    def __call__(self, ts, ys, target_error, interpolator):
+    def __call__(self, ts, ys, target_error, interpolator,
+                 n_interpolation_points=4):
 
         # Notation:
         # _nph denotes exact values at time t_nph
@@ -487,6 +460,8 @@ class midpoint_ab_time_adaptor(object):
             # Or if there isn't one stored just fudge it by using the
             # midpoint value.
             dy_nmh = dy_nm1_mid
+
+        # Store the new one
         self.dy_nmh = dy_nph
 
         # Calculate this part of the truncation error (see notes)
@@ -520,85 +495,96 @@ class midpoint_ab_time_adaptor(object):
         return _scale_timestep(dt_n, scaling_factor)
 
 
-def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator):
-    """
+class midpoint_fe_ab_time_adaptor(object):
 
-    See notes: 19-20/3/2013 for algebra and explanations.
-    """
+    #??ds don't like this very much, maybe I should/could use closures
+    # instead?
+    def __call__(self, ts, ys, target_error, interpolator,
+                 n_interpolation_points=4):
+        """ See notes: 19-20/3/2013 for algebra and explanations.
+        """
 
-    # Notation:
-    # _nph denotes exact values at time t_nph
-    # _mid denotes approximations using (y_np1 + yn)/2
+        # Notation:
+        # _nph denotes exact values at time t_nph
+        # _mid denotes approximations using (y_np1 + yn)/2
 
-    # Set up some variables
-    # ============================================================
+        # Set up some variables
+        # ============================================================
 
-    dt_n = ts[-1] - ts[-2]
-    dt_nm1 = ts[-2] - ts[-3]
+        dt_n = ts[-1] - ts[-2]
+        dt_nm1 = ts[-2] - ts[-3]
 
-    y_np1_MP = ys[-1]
-    y_n_MP = ys[-2]
-    y_nm1_MP = ys[-3]
+        y_np1_MP = ys[-1]
+        y_n_MP = ys[-2]
+        y_nm1_MP = ys[-3]
 
-    t_nph = (ts[-1] + ts[-2])/2
-    t_nmh = (ts[-2] + ts[-3])/2
+        t_nph = (ts[-1] + ts[-2])/2
+        t_nmh = (ts[-2] + ts[-3])/2
 
-    y_nmid = (y_np1_MP + y_n_MP)/2
-    dy_nmid = (y_np1_MP - y_n_MP)/dt_n
+        y_nmid = (y_np1_MP + y_n_MP)/2
+        dy_nmid = (y_np1_MP - y_n_MP)/dt_n
+        dy_nm1_mid = (ys[-3] - ys[-2])/dt_nm1
 
-    # Get the past value from the interpolator (since we already have it no
-    # need to interpolate it again). This must be done before the next
-    # interpolation (or the [-1] would become [-2]).
-    try:
-        dy_nmh = interpolator.dy_nmh
+        # Interpolate value at t_nph
+        # ============================================================
+        a = -n_interpolation_points - 1
+        interpolated_values = interpolator(ts[a:-1], ys[a:-1],
+                                           t_nph, der=[0, 1, 2])
 
-    # If it was out of range then we don't have a value, approximate by
-    # dy_mid_nmh (bit of a fudge...)
-    except AttributeError:
-        dy_nmh = (ys[-2] + ys[-3])/2
+        # Unpack derivatives
+        y_nph, dy_nph, ddy_nph = list(interpolated_values)
 
-    # Interpolate exact value and derivatives at t_nph
-    y_nph, dy_nph, ddy_nph = interpolator(ts, ys, t_nph)
+        # Get previous dy_nph value and store the present one ready for the
+        # next step.
+        try:
+            dy_nmh = self.dy_nmh
+        except AttributeError:
+            # Or if there isn't one stored just fudge it by using the
+            # midpoint value.
+            dy_nmh = dy_nm1_mid
 
-    # Use a forward Euler predictor to eliminate the Jacobian term
-    # ============================================================
+        # Store the new one
+        self.dy_nmh = dy_nph
 
-    # Forward Euler with exact initial y and approximate midpoint
-    # derivative.
-    y_np1_FE = y_nph + (dt_n/2) * dy_nmid
+        # Use a forward Euler predictor to eliminate the Jacobian term
+        # ============================================================
 
-    # Use an AB2 predictor to eliminate the dddy_nph term
-    # ============================================================
-    AB_dt_n = 0.5*dt_n
-    AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
+        # Forward Euler with exact initial y and approximate midpoint
+        # derivative.
+        y_np1_FE = y_nph + (dt_n/2) * dy_nmid
 
-    y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
-                         AB_dt_nm1, dy_nmh)
+        # Use an AB2 predictor to eliminate the dddy_nph term
+        # ============================================================
+        AB_dt_n = 0.5*dt_n
+        AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
 
-    # Get the truncation error, scaling factor and new time step size
-    # ============================================================
+        y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
+                             AB_dt_nm1, dy_nmh)
 
-    # Some useful values
-    omega_n = dt_n / (3*dt_nm1)
-    y_np1_FEc = (y_np1_FE + ((dt_n**2)/4) * ddy_nph)
+        # Get the truncation error, scaling factor and new time step size
+        # ============================================================
 
-    # Calculate the lte (see notes for why this equation)
-    midpoint_lte = (omega_n * (y_np1_MP - y_np1_AB2)
-                    + ((omega_n - 1)/2) * (y_np1_FEc - y_np1_MP))
+        # Some useful values
+        omega_n = dt_n / (3*dt_nm1)
+        y_np1_FEc = (y_np1_FE + ((dt_n**2)/4) * ddy_nph)
 
-    # Get a norm
-    error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
+        # Calculate the lte (see notes for why this equation)
+        midpoint_lte = (omega_n * (y_np1_MP - y_np1_AB2)
+                        + ((omega_n - 1)/2) * (y_np1_FEc - y_np1_MP))
 
-    # Guard against division by zero
-    if error_norm < 1e-12:
-        scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
+        # Get a norm
+        error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
 
-    # Calculate scaling factor
-    else:
-        scaling_factor = ((target_error / error_norm)**0.3333)
+        # Guard against division by zero
+        if error_norm < 1e-12:
+            scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
 
-    # Return the scaled timestep (function does lots of checks).
-    return _scale_timestep(dt_n, scaling_factor)
+        # Calculate scaling factor
+        else:
+            scaling_factor = ((target_error / error_norm)**0.3333)
+
+        # Return the scaled timestep (function does lots of checks).
+        return _scale_timestep(dt_n, scaling_factor)
 
 
 # Testing
