@@ -70,17 +70,17 @@ def _timestep_scheme_factory(label):
         return midpoint_residual, None, None
 
     elif label == 'midpoint ab':
-        n_start = 4
+        n_start = 2
         adaptor = par(midpoint_ab_time_adaptor(),
                       interpolator=krogh_interpolate,
-                      n_interpolation_points=n_start)
+                      n_interpolation_points=n_start+2)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'midpoint fe ab':
-        n_start = 4
+        n_start = 2
         adaptor = par(midpoint_fe_ab_time_adaptor(),
                       interpolator=krogh_interpolate,
-                      n_interpolation_points=n_start)
+                      n_interpolation_points=n_start+2)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'trapezoid':
