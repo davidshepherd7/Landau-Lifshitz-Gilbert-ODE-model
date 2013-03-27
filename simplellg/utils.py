@@ -79,31 +79,31 @@ def list_almost_equal(list_a, list_b, tol=1e-9):
 # (instead of defining the almost equal commands in terms of each
 # other) to make sure we get useful output from nose -d.
 # ??ds fix the names to use _ and lower case?
-def assertAlmostEqual(a, b, tol=1e-9):
+def assert_almost_equal(a, b, tol=1e-9):
     assert(abs(a - b) < tol)
 
 
-def assertAlmostZero(a, tol=1e-9):
+def assert_almost_zero(a, tol=1e-9):
     assert(abs(a) < tol)
 
 
-def assertListAlmostEqual(list_a, list_b, tol=1e-9):
+def assert_list_almost_equal(list_a, list_b, tol=1e-9):
     for a, b in zip(list_a, list_b):
         assert(abs(a - b) < tol)
 
 
-def assertListAlmostZero(values, tol=1e-9):
+def assert_list_almost_zero(values, tol=1e-9):
     for a in values:
         assert(abs(a) < tol)
 
 
 # Spherical polar coordinates asserts
-def assertAziInRange(sph):
+def assert_azi_in_range(sph):
     assert(sph.azi > 0 or almost_equal(sph.azi, 0.0))
     assert(sph.azi < 2*pi or almost_equal(sph.azi, 2*pi))
 
 
-def assertPolarInRange(sph):
+def assert_polar_in_range(sph):
     assert(sph.pol >= 0 and sph.pol <= pi)
 
 
@@ -302,7 +302,7 @@ class TestCoordinateConversion(unittest.TestCase):
 
     # Check that applying both operations gives back the same thing
     def check_cart_sph_composition(self, cart, sph):
-        assertListAlmostEqual(cart, sph2cart(sph))
+        assert_list_almost_equal(cart, sph2cart(sph))
 
     def test_composition_is_identity(self):
         for (cart, sph) in zip(self.carts, self.sphs):
@@ -311,15 +311,15 @@ class TestCoordinateConversion(unittest.TestCase):
     # Check that the azimuthal angle is in the correct range
     def test_azi_range(self):
         for sph in self.sphs:
-            assertAziInRange(sph)
+            assert_azi_in_range(sph)
 
     def test_azimuthal_edge_cases(self):
-        assertAlmostEqual(cart2sph((-1, -1, 0)).azi, 5*pi/4)
+        assert_almost_equal(cart2sph((-1, -1, 0)).azi, 5*pi/4)
 
     # Check that the polar angle is in the correct range
     def test_polar_range(self):
         for sph in self.sphs:
-            assertPolarInRange(sph)
+            assert_polar_in_range(sph)
 
 
 def example_f(p):
@@ -337,8 +337,8 @@ def test_parallel_sweep():
 
     # Use sets for the comparison because the parallel computation destroys
     # any ordering we had before (and sets order their elements).
-    assertListAlmostEqual(set(parallel_result), set(exact_result))
-    assertListAlmostEqual(serial_result, exact_result)
+    assert_list_almost_equal(set(parallel_result), set(exact_result))
+    assert_list_almost_equal(serial_result, exact_result)
 
 
 def test_skew_size_check():
@@ -354,7 +354,7 @@ def test_skew():
     for x in xs:
         # Anything crossed with itself is zero:
         skew_mat = skew(x)
-        assertListAlmostZero(sp.dot(skew_mat, sp.array(x)))
+        assert_list_almost_zero(sp.dot(skew_mat, sp.array(x)))
 
         # a x b = - b x a
-        assertListAlmostZero(sp.dot(skew_mat, a) + sp.dot(a, skew_mat))
+        assert_list_almost_zero(sp.dot(skew_mat, a) + sp.dot(a, skew_mat))

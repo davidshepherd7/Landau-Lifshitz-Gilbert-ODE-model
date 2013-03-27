@@ -131,8 +131,8 @@ def check_zeeman(m, H, ans):
     """Helper function for test_zeeman."""
     mag_params = utils.MagParameters()
     mag_params.Hvec = H
-    utils.assertAlmostEqual(zeeman_energy(m, mag_params),
-                            ans(mag_params))
+    utils.assert_almost_equal(zeeman_energy(m, mag_params),
+                              ans(mag_params))
 
 
 # See also mallinson.py: test_self_consistency

@@ -286,7 +286,7 @@ class TrapezoidRuleResidual(object):
 
         # Check that we got the right times: the midpoint should be at
         # the step before the most recent time.
-        utils.assertAlmostEqual((temp_ts[-1] + temp_ts[-2])/2, ts[-2])
+        utils.assert_almost_equal((temp_ts[-1] + temp_ts[-2])/2, ts[-2])
 
         # Now invert midpoint to get the derivative
         dy_nph = (temp_ys[-1] - temp_ys[-2])/dt_n
@@ -313,6 +313,8 @@ class TrapezoidRuleResidual(object):
 
 # Adaptive timestepping functions
 # ============================================================
+
+
 def default_dt_scaling(target_error, error_estimate, timestepper_order):
     """Standard way of rescaling the time step to attain the target error.
     Taken from Gresho and Sani (various places).
@@ -334,7 +336,7 @@ def failed_timestep_scaling(_):
 
 
 def scale_timestep(dt, target_error, error_norm, order,
-                    scaling_function=default_dt_scaling):
+                   scaling_function=default_dt_scaling):
     """Scale dt by a scaling factor. Mostly this function is needed to
     check that the scaling factor and new time step are within the
     allowable bounds.
@@ -474,6 +476,7 @@ def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
 #     """ Utility storage class for passing variables between function calls."""
 #     def __call__(*args):
 #         return midpoint_ab_time_adaptor(*args, T_nm1=self.Tnm1)
+
 
 def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
                              n_interp=4,
@@ -618,7 +621,7 @@ def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
 
     # Total error should be bounded by roughly n_steps * LTE
     overall_tol = len(ys) * tol * 10
-    utils.assertListAlmostEqual(ys, map(exact, ts), overall_tol)
+    utils.assert_list_almost_equal(ys, map(exact, ts), overall_tol)
 
     # if 'midpoint ab' in method:
     #     plt.plot(ts, ys)
@@ -657,7 +660,7 @@ def test_bad_timestep_handling():
     # plt.show()
 
     overall_tol = len(ys) * tol * 1.2  # 1.2 is a fudge factor...
-    utils.assertListAlmostEqual(ys, map(exp3_exact, ts), overall_tol)
+    utils.assert_list_almost_equal(ys, map(exp3_exact, ts), overall_tol)
 
 
 def test_ab2():
@@ -687,7 +690,7 @@ def test_ab2():
     # plt.plot(ts, ys, 'x', ts, map(exp, ts))
     # plt.show()
 
-    utils.assertAlmostEqual(ys[-1], exp(ts[-1]), 1e-5)
+    utils.assert_almost_equal(ys[-1], exp(ts[-1]), 1e-5)
 
 
 def test_exp_timesteppers():
@@ -704,7 +707,7 @@ def test_exp_timesteppers():
         # plt.plot(ts,ys)
         # plt.plot(ts, map(exp,ts), '--r')
         # plt.show()
-        utils.assertAlmostEqual(ys[-1], exp(tmax), tol)
+        utils.assert_almost_equal(ys[-1], exp(tmax), tol)
 
     # List of test parameters
     methods = [('bdf2', 1e-5),
@@ -728,8 +731,8 @@ def test_vector_timesteppers():
         ys, ts = odeint(residual, [cos(0.0), exp(0.0)], tmax, dt=0.001,
                         method=method)
 
-        utils.assertAlmostEqual(ys[-1][0], cos(tmax), tol[0])
-        utils.assertAlmostEqual(ys[-1][1], exp(tmax), tol[1])
+        utils.assert_almost_equal(ys[-1][0], cos(tmax), tol[0])
+        utils.assert_almost_equal(ys[-1][1], exp(tmax), tol[1])
 
     # List of test parameters
     methods = [('bdf2', [1e-4, 1e-4]),

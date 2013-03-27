@@ -165,7 +165,7 @@ class MallinsonSolverCheckerBase():
     # Azimuthal is in correct range
     def test_azimuthal_in_range(self):
         for sph in self.sphs:
-            utils.assertAziInRange(sph)
+            utils.assert_azi_in_range(sph)
 
     # Monotonically decreasing azimuthal angle except for jumps at 2*pi.
     def test_increasing_azimuthal(self):

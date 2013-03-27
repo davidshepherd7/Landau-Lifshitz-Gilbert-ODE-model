@@ -143,8 +143,8 @@ def check_residual(residual, initial_m):
         mlsn.calculate_equivalent_dynamics(mag_params, result_pols)
 
     # Check
-    utils.assertListAlmostEqual(exact_azis, result_azis, 1e-3)
-    utils.assertListAlmostEqual(exact_times, result_times, 1e-3)
+    utils.assert_list_almost_equal(exact_azis, result_azis, 1e-3)
+    utils.assert_list_almost_equal(exact_times, result_times, 1e-3)
 
 
 def test_dfdm():
@@ -201,4 +201,4 @@ def check_dfdm(m_cart):
     print dfdm_fd
 
     # Check the max of the difference
-    utils.assertAlmostZero(sp.amax(dfdm_func - dfdm_fd), 1e-6)
+    utils.assert_almost_zero(sp.amax(dfdm_func - dfdm_fd), 1e-6)
