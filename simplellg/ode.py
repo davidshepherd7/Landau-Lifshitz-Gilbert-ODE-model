@@ -72,15 +72,18 @@ def _timestep_scheme_factory(label):
     elif label == 'midpoint ab':
         n_start = 6
         adaptor = par(midpoint_ab_time_adaptor,
-                      interpolator=krogh_interpolate,
-                      n_interp=n_start)
+                      interpolator=par(my_interpolate, n_interp=n_start))
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'midpoint fe ab':
         n_start = 6
         adaptor = par(midpoint_fe_ab_time_adaptor,
-                      interpolator=krogh_interpolate,
-                      n_interp=n_start)
+                      interpolator=par(my_interpolate, n_interp=n_start))
+        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+
+    elif label == 'midpoint jacobian ab':
+        n_start = 2
+        adaptor = midpoint_jacobian_ab_time_adaptor
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'trapezoid':
@@ -447,7 +450,7 @@ def bdf2_mp_time_adaptor(ts, ys, target_error):
     return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
-def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
+def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
     # Find the start and end of the slice of ts, ys that we want to use for
     # interpolation.
     start = -n_interp if use_y_np1_in_interp else -n_interp - 1
@@ -461,7 +464,7 @@ def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
     # Actually interpolate the values
     t_nph = (ts[-1] + ts[-2])/2
     t_nmh = (ts[-2] + ts[-3])/2
-    interps = interpolator(
+    interps = krogh_interpolate(
         ts[start:end], ys[start:end], [t_nmh, t_nph], der=[0, 1, 2])
 
     # Unpack (can't get "proper" unpacking to work)
@@ -472,15 +475,96 @@ def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
 
     return dy_nmh, y_nph, dy_nph, ddy_nph
 
+
+def midpoint_approximation_fake_interpolation(ts, ys, *_):
+    # Just use midpoint approximation for "interpolation"!
+
+    dt_n = (ts[-1] + ts[-2])/2
+    dt_nm1 = (ts[-2] + ts[-3])/2
+
+    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
+    y_nph = (ys[-1] + ys[-2])/2
+    dy_nph = (ys[-1] - ys[-2])/dt_n
+
+    return dy_nmh, y_nph, dy_nph, ddy_nph
+
+
 # class midpoint_ab_time_adaptor(object):
 #     """ Utility storage class for passing variables between function calls."""
 #     def __call__(*args):
 #         return midpoint_ab_time_adaptor(*args, T_nm1=self.Tnm1)
 
 
-def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
-                             n_interp=4,
-                             use_y_np1_in_interp=True):
+def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
+    """
+    See notes: 7/2/2013 for the algebra on calculating the AB2
+    solution. See "mathematica_adaptive_midpoint.m for algebra to get a
+    local truncation error out of all this.
+    """
+
+    dt_n = ts[-1] - ts[-2]
+    dt_nm1 = ts[-2] - ts[-3]
+    y_np1_MP = ys[-1]
+    y_nm1_MP = ys[-3]
+
+    t_nph = (ts[-1] + ts[-2])/2
+
+    # Get explicit adams-bashforth 2 solution (variable timestep -- uses
+    # steps at n + 1/2 and n - 1/2).
+    # ============================================================
+    # Get y derivatives at previous midpoints (this gives no additional
+    # loss of accuracy because we are just inverting the midpoint method to
+    # get back the derivative).
+    dy_nph = (ys[-1] - ys[-2])/dt_n
+    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
+
+    # Approximate y at step n+1/2 by averaging.
+    y_nph = (ys[-1] + ys[-2]) * 0.5  # (ys[-1] + ys[-2])/2
+
+    # Calculate the corresponding fictional timestep sizes
+    AB_dt_n = 0.5*dt_n
+    AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
+
+    # Calculate using AB2 variable timestep formula
+    y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
+                         AB_dt_nm1, dy_nmh)
+
+    # Choose an estimate for the derivatives of y at time t_{n+0.5}
+    # ============================================================
+    # # Finite difference dy/dt from neighbouring y values
+    # dy_n = (y_np1_MP - y_nm1_MP)/(dt_n + dt_nm1)
+    # # Average of midpoints. Accuracy should be O(h^2)?
+    # dy_n = (dy_nph + dy_nmh) / 2
+    # # Ignore d2y/dt2 (conservative estimate).
+    # ddy_nph = sp.zeros_like(ys[-1])
+    # Finite difference dy2/dt2 from neighbouring dy values. Not sure on
+    # the accuracy here...
+    ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
+
+    # df/dy term (note: this should be a square matrix of size len(y))
+    if dfdy_function is not None:
+        dfdy_nph = dfdy_function(t_nph, y_nph, dy_nph)
+    else:
+        # Can't calculate so just ignore it
+        dfdy_nph = sp.zeros((len(ys[-1]), len(ys[-1])))
+
+    # Get the truncation error and scaling factor
+    # ============================================================
+    # As derived in notes from 21/2/13
+    a = 4 / (1 + 3*(dt_nm1/dt_n))
+    dddy_term = (y_np1_AB2 - y_np1_MP) * a
+    dfdy_term = (dt_n**3 * (1+a)/8) * dfdy_nph.dot(ddy_nph)
+
+    error = dddy_term - dfdy_term
+
+    # Get a norm and scaling factor
+    error_norm = sp.linalg.norm(sp.array(error, ndmin=1), 2)
+
+    return scale_timestep(dt_n, target_error, error_norm, 3)
+
+
+def midpoint_ab_time_adaptor(ts, ys, target_error,
+                             interpolator=my_interpolate):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -507,8 +591,7 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
 
     # Interpolate exact value and derivatives at t_nph
     # ============================================================
-    dy_nmh, y_nph, dy_nph, _ = my_interpolate(ts, ys, interpolator,
-                                              n_interp, use_y_np1_in_interp)
+    dy_nmh, y_nph, dy_nph, _ = interpolator(ts, ys)
 
     # Calculate this part of the truncation error (see notes)
     ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
@@ -540,9 +623,8 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
     return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
-def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator,
-                                n_interp=4,
-                                use_y_np1_in_interp=False):
+def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
+                                interpolator=my_interpolate):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -570,8 +652,7 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator,
     # Interpolate value at t_nph
     # ============================================================
 
-    dy_nmh, y_nph, dy_nph, ddy_nph = \
-        my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp)
+    dy_nmh, y_nph, dy_nph, ddy_nph = interpolator(ts, ys)
 
     # Use a forward Euler predictor to eliminate the Jacobian term
     # ============================================================
@@ -623,7 +704,7 @@ def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
     overall_tol = len(ys) * tol * 10
     utils.assert_list_almost_equal(ys, map(exact, ts), overall_tol)
 
-    # if 'midpoint ab' in method:
+    # if 'midpoint' in method:
     #     plt.plot(ts, ys)
     #     plt.plot(ts[1:], utils.ts2dts(ts))
     #     plt.title(method + str(residual) + str(exact))
@@ -751,6 +832,7 @@ def test_adaptive_dt():
     methods = [('bdf2 mp', 1e-4),
                ('midpoint fe ab', 1e-4),
                ('midpoint ab', 1e-4),
+               ('midpoint jacobian ab', 1e-4),
                ]
 
     functions = [(exp_residual, exp),
