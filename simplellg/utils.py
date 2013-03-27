@@ -72,7 +72,7 @@ def list_almost_zero(list_x, tol=1e-9):
 
 
 def list_almost_equal(list_a, list_b, tol=1e-9):
-    return list_almost_zero(abs_list_diff(list_a, list_b, tol))
+    return list_almost_zero(abs_list_diff(list_a, list_b), tol)
 
 
 # Some useful asserts. We explicitly use the assert command in each

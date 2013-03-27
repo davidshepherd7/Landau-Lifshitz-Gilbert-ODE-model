@@ -86,6 +86,18 @@ def _timestep_scheme_factory(label):
         adaptor = midpoint_jacobian_ab_time_adaptor
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
+    elif label == 'midpoint ab fakeinterp':
+        n_start = 2
+        adaptor = par(midpoint_ab_time_adaptor,
+                      interpolator=midpoint_approximation_fake_interpolation)
+        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+
+    elif label == 'midpoint fe ab fakeinterp':
+        n_start = 2
+        adaptor = par(midpoint_fe_ab_time_adaptor,
+                      interpolator=midpoint_approximation_fake_interpolation)
+        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
         # getting derivatives of y from implicit formulas we need an extra
@@ -149,7 +161,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         try:
             y_np1 = newton_krylov(residual, ys[-1], method='gmres')
         except sp.optimize.nonlin.NoConvergence:
-            dt = scale_timestep(dt, _, _, failed_timestep_scaling)
+            dt = scale_timestep(dt, None, None, None,
+                                scaling_function=failed_timestep_scaling)
             sys.stderr.write("Failed to converge, reducing time step.")
             continue
 
@@ -331,7 +344,7 @@ def default_dt_scaling(target_error, error_estimate, timestepper_order):
     return scaling_factor
 
 
-def failed_timestep_scaling(_):
+def failed_timestep_scaling(*_):
     """Return scaling factor for a failed time step, ignores all input
     arguments.
     """
@@ -476,15 +489,19 @@ def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
     return dy_nmh, y_nph, dy_nph, ddy_nph
 
 
-def midpoint_approximation_fake_interpolation(ts, ys, *_):
+def midpoint_approximation_fake_interpolation(ts, ys):
     # Just use midpoint approximation for "interpolation"!
 
     dt_n = (ts[-1] + ts[-2])/2
     dt_nm1 = (ts[-2] + ts[-3])/2
 
-    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
+    # Use midpoint average approximations
     y_nph = (ys[-1] + ys[-2])/2
     dy_nph = (ys[-1] - ys[-2])/dt_n
+    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
+
+    # Finite diff it
+    ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
 
     return dy_nmh, y_nph, dy_nph, ddy_nph
 
@@ -509,18 +526,12 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
     t_nph = (ts[-1] + ts[-2])/2
 
+    dy_nmh, y_nph, dy_nph, ddy_nph = midpoint_approximation_fake_interpolation(
+        ts, ys)
+
     # Get explicit adams-bashforth 2 solution (variable timestep -- uses
     # steps at n + 1/2 and n - 1/2).
     # ============================================================
-    # Get y derivatives at previous midpoints (this gives no additional
-    # loss of accuracy because we are just inverting the midpoint method to
-    # get back the derivative).
-    dy_nph = (ys[-1] - ys[-2])/dt_n
-    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
-
-    # Approximate y at step n+1/2 by averaging.
-    y_nph = (ys[-1] + ys[-2]) * 0.5  # (ys[-1] + ys[-2])/2
-
     # Calculate the corresponding fictional timestep sizes
     AB_dt_n = 0.5*dt_n
     AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
@@ -531,15 +542,6 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
     # Choose an estimate for the derivatives of y at time t_{n+0.5}
     # ============================================================
-    # # Finite difference dy/dt from neighbouring y values
-    # dy_n = (y_np1_MP - y_nm1_MP)/(dt_n + dt_nm1)
-    # # Average of midpoints. Accuracy should be O(h^2)?
-    # dy_n = (dy_nph + dy_nmh) / 2
-    # # Ignore d2y/dt2 (conservative estimate).
-    # ddy_nph = sp.zeros_like(ys[-1])
-    # Finite difference dy2/dt2 from neighbouring dy values. Not sure on
-    # the accuracy here...
-    ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
 
     # df/dy term (note: this should be a square matrix of size len(y))
     if dfdy_function is not None:
@@ -704,15 +706,6 @@ def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
     overall_tol = len(ys) * tol * 10
     utils.assert_list_almost_equal(ys, map(exact, ts), overall_tol)
 
-    # if 'midpoint' in method:
-    #     plt.plot(ts, ys)
-    #     plt.plot(ts[1:], utils.ts2dts(ts))
-    #     plt.title(method + str(residual) + str(exact))
-    #     ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
-    #                     method='bdf2 mp', target_error=tol)
-    #     plt.plot(ts[1:], utils.ts2dts(ts))
-    #     plt.show()
-
     return ts, ys
 
 
@@ -832,7 +825,6 @@ def test_adaptive_dt():
     methods = [('bdf2 mp', 1e-4),
                ('midpoint fe ab', 1e-4),
                ('midpoint ab', 1e-4),
-               ('midpoint jacobian ab', 1e-4),
                ]
 
     functions = [(exp_residual, exp),
