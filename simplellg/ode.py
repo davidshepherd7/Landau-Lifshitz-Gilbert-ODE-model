@@ -146,7 +146,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         try:
             y_np1 = newton_krylov(residual, ys[-1], method='gmres')
         except sp.optimize.nonlin.NoConvergence:
-            dt = _scale_timestep(dt, TIMESTEP_FAILURE_DT_SCALING_FACTOR, True)
+            dt = scale_timestep(dt, _, _, failed_timestep_scaling)
             sys.stderr.write("Failed to converge, reducing time step.")
             continue
 
@@ -313,34 +313,57 @@ class TrapezoidRuleResidual(object):
 
 # Adaptive timestepping functions
 # ============================================================
-
-
-def _scale_timestep(dt, scaling_factor, failed_step_flag=False):
-    """ Scale dt by a scaling factor. Mostly this function is only needed
-    for error checking.
+def default_dt_scaling(target_error, error_estimate, timestepper_order):
+    """Standard way of rescaling the time step to attain the target error.
+    Taken from Gresho and Sani (various places).
     """
+    try:
+        scaling_factor = (target_error/error_estimate)**(1.0/timestepper_order)
 
-    # If the error is too bad (scaling factor too small) then reject the
-    # step.
-    if scaling_factor < MIN_ALLOWED_DT_SCALING_FACTOR \
-            and not failed_step_flag:
-        raise FailedTimestepError(scaling_factor * dt)
-
-    # If the scaling factor is really large just use the max
-    if scaling_factor > MAX_ALLOWED_DT_SCALING_FACTOR:
+    except ZeroDivisionError:
         scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
 
-    # If the timestep would still get too big then return the max
+    return scaling_factor
+
+
+def failed_timestep_scaling(_):
+    """Return scaling factor for a failed time step, ignores all input
+    arguments.
+    """
+    return TIMESTEP_FAILURE_DT_SCALING_FACTOR
+
+
+def scale_timestep(dt, target_error, error_norm, order,
+                    scaling_function=default_dt_scaling):
+    """Scale dt by a scaling factor. Mostly this function is needed to
+    check that the scaling factor and new time step are within the
+    allowable bounds.
+    """
+
+    # Calculate the scaling factor
+    scaling_factor = scaling_function(target_error, error_norm, order)
+
+    # If the error is too bad (i.e. scaling factor too small) reject the
+    # step, unless we are already dealing with a rejected step;
+    if scaling_factor < MIN_ALLOWED_DT_SCALING_FACTOR \
+            and not scaling_function is failed_timestep_scaling:
+        raise FailedTimestepError(scaling_factor * dt)
+
+    # or if the scaling factor is really large just use the max scaling.
+    elif scaling_factor > MAX_ALLOWED_DT_SCALING_FACTOR:
+        scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
+
+    # If the timestep would get too big then return the max time step;
     if scaling_factor * dt > MAX_ALLOWED_TIMESTEP:
         return MAX_ALLOWED_TIMESTEP
 
-    # If the timestep would become too small then fail
+    # or if the timestep would become too small then fail;
     elif scaling_factor * dt < MIN_ALLOWED_TIMESTEP:
         error = "Tried to reduce dt to " + str(scaling_factor * dt) +\
             " which is less than the minimum of " + str(MIN_ALLOWED_TIMESTEP)
         raise ValueError(error)
 
-    # Otherwise scale the timestep normally
+    # otherwise scale the timestep normally.
     else:
         return scaling_factor * dt
 
@@ -417,11 +440,9 @@ def bdf2_mp_time_adaptor(ts, ys, target_error):
 
     # Calculate truncation error -- oomph-lib
     error = (y_np1 - y_np1_EMP) * error_weight
-
     error_norm = sp.linalg.norm(error, 2)
 
-    scaling_factor = (target_error / error_norm)**(1.0/3)
-    return _scale_timestep(dt_n, scaling_factor)
+    return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
 def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
@@ -449,6 +470,10 @@ def my_interpolate(ts, ys, interpolator, n_interp, use_y_np1_in_interp):
 
     return dy_nmh, y_nph, dy_nph, ddy_nph
 
+# class midpoint_ab_time_adaptor(object):
+#     """ Utility storage class for passing variables between function calls."""
+#     def __call__(*args):
+#         return midpoint_ab_time_adaptor(*args, T_nm1=self.Tnm1)
 
 def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
                              n_interp=4,
@@ -508,16 +533,8 @@ def midpoint_ab_time_adaptor(ts, ys, target_error, interpolator,
     # Get a norm
     error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
 
-    # Guard against division by zero
-    if error_norm < 1e-12:
-        scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
-
-    # Calculate scaling factor
-    else:
-        scaling_factor = ((target_error / error_norm)**0.3333)
-
-    # Return the scaled timestep (function does lots of checks).
-    return _scale_timestep(dt_n, scaling_factor)
+    # Return the scaled timestep (with lots of checks).
+    return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
 def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator,
@@ -581,16 +598,8 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error, interpolator,
     # Get a norm
     error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
 
-    # Guard against division by zero
-    if error_norm < 1e-12:
-        scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
-
-    # Calculate scaling factor
-    else:
-        scaling_factor = ((target_error / error_norm)**0.3333)
-
-    # Return the scaled timestep (function does lots of checks).
-    return _scale_timestep(dt_n, scaling_factor)
+    # Return the scaled timestep (with lots of checks).
+    return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
 # Testing
@@ -615,6 +624,9 @@ def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
     #     plt.plot(ts, ys)
     #     plt.plot(ts[1:], utils.ts2dts(ts))
     #     plt.title(method + str(residual) + str(exact))
+    #     ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
+    #                     method='bdf2 mp', target_error=tol)
+    #     plt.plot(ts[1:], utils.ts2dts(ts))
     #     plt.show()
 
     return ts, ys

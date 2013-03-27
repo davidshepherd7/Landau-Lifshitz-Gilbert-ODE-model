@@ -78,6 +78,7 @@ def list_almost_equal(list_a, list_b, tol=1e-9):
 # Some useful asserts. We explicitly use the assert command in each
 # (instead of defining the almost equal commands in terms of each
 # other) to make sure we get useful output from nose -d.
+# ??ds fix the names to use _ and lower case?
 def assertAlmostEqual(a, b, tol=1e-9):
     assert(abs(a - b) < tol)
 
