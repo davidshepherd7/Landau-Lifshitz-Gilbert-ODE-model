@@ -599,7 +599,7 @@ import matplotlib.pyplot as plt
 from example_residuals import *
 
 
-def check_problem(method, residual, exact, tol=1e-3, tmax=5.0):
+def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
     """Helper function to run odeint with a specified method for a problem
     and check that the solution matches.
     """
@@ -733,9 +733,9 @@ def test_vector_timesteppers():
 
 def test_adaptive_dt():
 
-    methods = [('bdf2 mp', 1e-3, 382),
-               ('midpoint fe ab', 1e-3, 51),
-               ('midpoint ab', 1e-3, 51),
+    methods = [('bdf2 mp', 1e-4),
+               ('midpoint fe ab', 1e-4),
+               ('midpoint ab', 1e-4),
                ]
 
     functions = [(exp_residual, exp),
@@ -744,7 +744,7 @@ def test_adaptive_dt():
                  (exp_of_poly_residual, exp_of_poly_exact)
                  ]
 
-    for meth, tol, allowed_steps in methods:
+    for meth, tol in methods:
         for residual, exact in functions:
             yield check_problem, meth, residual, exact, tol
 
