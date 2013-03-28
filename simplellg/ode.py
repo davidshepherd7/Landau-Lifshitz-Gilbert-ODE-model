@@ -49,12 +49,29 @@ class FailedTimestepError(Exception):
         return "Exception: timestep failed, next timestep should be "\
             + repr(self.new_dt)
 
+class ConvergenceFailure(Exception): pass
 
-def _timestep_scheme_factory(label):
-    """Pick the functions needed for this method. Returns functions for a
-    time residual, a timestep adaptor and any intialisation actions needed.
+def _timestep_scheme_factory(method):
+    """Construct the functions for the named method. Input is either a
+    string with the name of the method or a dict with the name and a list
+    of parameters.
+
+    Returns a triple of functions for:
+    * a time residual
+    * a timestep adaptor
+    * intialisation actions
     """
-    label = label.lower()
+
+    _method_dict = {}
+
+    # If it's a dict then get the label attribute, otherwise assume it's a
+    # string...
+    if isinstance(method, dict):
+        _method_dict = method
+    else:
+        _method_dict = {'label' : method}
+
+    label = _method_dict.get('label').lower()
 
     if label == 'bdf2':
         return bdf2_residual, None, par(higher_order_start, 2)
@@ -70,32 +87,18 @@ def _timestep_scheme_factory(label):
         return midpoint_residual, None, None
 
     elif label == 'midpoint ab':
-        n_start = 6
-        adaptor = par(midpoint_ab_time_adaptor,
-                      interpolator=par(my_interpolate, n_interp=n_start))
-        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+        # Get values from dict (with defaults if not set).
+        n_start = _method_dict.setdefault('n_start', 2)
+        ab_start = _method_dict.setdefault('ab_start_point', 't_n')
+        use_y_np1_in_interp = _method_dict.setdefault('use_y_np1_in_interp', False)
 
-    elif label == 'midpoint fe ab':
-        n_start = 6
-        adaptor = par(midpoint_fe_ab_time_adaptor,
-                      interpolator=par(my_interpolate, n_interp=n_start))
-        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+        interp = _method_dict.setdefault(
+            'interpolator', par(my_interpolate, n_interp=n_start,
+                                use_y_np1_in_interp=use_y_np1_in_interp))
 
-    elif label == 'midpoint jacobian ab':
-        n_start = 2
-        adaptor = midpoint_jacobian_ab_time_adaptor
-        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+        adaptor = par(midpoint_ab_time_adaptor, ab_start_point=ab_start,
+                      interpolator=interp)
 
-    elif label == 'midpoint ab fakeinterp':
-        n_start = 2
-        adaptor = par(midpoint_ab_time_adaptor,
-                      interpolator=midpoint_approximation_fake_interpolation)
-        return midpoint_residual, adaptor, par(higher_order_start, n_start)
-
-    elif label == 'midpoint fe ab fakeinterp':
-        n_start = 2
-        adaptor = par(midpoint_fe_ab_time_adaptor,
-                      interpolator=midpoint_approximation_fake_interpolation)
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
     elif label == 'trapezoid':
@@ -379,7 +382,7 @@ def scale_timestep(dt, target_error, error_norm, order,
     elif scaling_factor * dt < MIN_ALLOWED_TIMESTEP:
         error = "Tried to reduce dt to " + str(scaling_factor * dt) +\
             " which is less than the minimum of " + str(MIN_ALLOWED_TIMESTEP)
-        raise ValueError(error)
+        raise ConvergenceFailure(error)
 
     # otherwise scale the timestep normally.
     else:
@@ -478,15 +481,16 @@ def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
     t_nph = (ts[-1] + ts[-2])/2
     t_nmh = (ts[-2] + ts[-3])/2
     interps = krogh_interpolate(
-        ts[start:end], ys[start:end], [t_nmh, t_nph], der=[0, 1, 2])
+        ts[start:end], ys[start:end], [t_nmh, ts[-2], t_nph], der=[0, 1, 2])
 
     # Unpack (can't get "proper" unpacking to work)
     dy_nmh = interps[1][0]
-    y_nph = interps[0][1]
-    dy_nph = interps[1][1]
-    ddy_nph = interps[2][1]
+    dy_n = interps[1][1]
+    y_nph = interps[0][2]
+    dy_nph = interps[1][2]
+    ddy_nph = interps[2][2]
 
-    return dy_nmh, y_nph, dy_nph, ddy_nph
+    return dy_nmh, y_nph, dy_nph, ddy_nph, dy_n
 
 
 def midpoint_approximation_fake_interpolation(ts, ys):
@@ -503,13 +507,7 @@ def midpoint_approximation_fake_interpolation(ts, ys):
     # Finite diff it
     ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
 
-    return dy_nmh, y_nph, dy_nph, ddy_nph
-
-
-# class midpoint_ab_time_adaptor(object):
-#     """ Utility storage class for passing variables between function calls."""
-#     def __call__(*args):
-#         return midpoint_ab_time_adaptor(*args, T_nm1=self.Tnm1)
+    return dy_nmh, y_nph, dy_nph, ddy_nph, None
 
 
 def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
@@ -566,7 +564,8 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
 
 def midpoint_ab_time_adaptor(ts, ys, target_error,
-                             interpolator=my_interpolate):
+                             interpolator=my_interpolate,
+                             ab_start_point='t_n'):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -593,30 +592,47 @@ def midpoint_ab_time_adaptor(ts, ys, target_error,
 
     # Interpolate exact value and derivatives at t_nph
     # ============================================================
-    dy_nmh, y_nph, dy_nph, _ = interpolator(ts, ys)
+    dy_nmh, y_nph, dy_nph, _, dy_n = interpolator(ts, ys)
 
     # Calculate this part of the truncation error (see notes)
-    ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
+    # ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
+    ymid_estimation_error = dt_n*(dy_nph - dy_nmid)
 
     # Use an AB2 predictor to eliminate the dddy_nph term
     # ============================================================
     AB_dt_n = 0.5*dt_n
-    AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
+
+    if ab_start_point == 't_n':
+        AB_dt_nm1 = 0.5*dt_n
+        AB_dy_start = dy_n
+
+    elif ab_start_point == 't_nmh':
+        AB_dt_nm1 = 0.5*dt_n + 0.5*dt_nm1
+        AB_dy_start = dy_nmh
+
+    else:
+        err = "Don't recognise ab_start_point value "+str(ab_start_point)
+        raise ValueError(err)
+
 
     y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
-                         AB_dt_nm1, dy_nmh)
+                         AB_dt_nm1, AB_dy_start)
 
     # Get the truncation error, scaling factor and new time step size
     # ============================================================
-    # Calculate (see notes)
-    # midpoint_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
-    midpoint_lte = ymid_estimation_error + \
-        4 * (3.0/dtr - 1) * (y_np1_AB2 - y_np1_MP - ymid_estimation_error)
 
-    # print exp(t_nmh) - dy_nmh, exp(t_nph) - y_nph,exp(t_nph) -  dy_nph, dt_n
-    # print ymid_estimation_error, y_np1_AB2 - y_np1_MP
+    # Calculate with a choice of start points (see notes)
+    if ab_start_point == 't_nmh':
+        p = -4 / (1 + 3/dtr)
+        midpoint_lte = ymid_estimation_error + \
+          p * (y_np1_AB2 - y_np1_MP - ymid_estimation_error)
 
-    # if len(ts) > 100: assert False
+    elif ab_start_point == 't_n':
+        midpoint_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
+
+    else:
+        err = "Don't recognise ab_start_point value "+str(ab_start_point)
+        raise ValueError(err)
 
     # Get a norm
     error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
@@ -654,7 +670,7 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
     # Interpolate value at t_nph
     # ============================================================
 
-    dy_nmh, y_nph, dy_nph, ddy_nph = interpolator(ts, ys)
+    dy_nmh, y_nph, dy_nph, ddy_nph, _ = interpolator(ts, ys)
 
     # Use a forward Euler predictor to eliminate the Jacobian term
     # ============================================================
@@ -823,7 +839,7 @@ def test_vector_timesteppers():
 def test_adaptive_dt():
 
     methods = [('bdf2 mp', 1e-4),
-               ('midpoint fe ab', 1e-4),
+               # ('midpoint fe ab', 1e-4),
                ('midpoint ab', 1e-4),
                ]
 
