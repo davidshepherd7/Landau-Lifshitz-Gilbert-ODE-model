@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import itertools as it
 import operator as op
+import functools as ft
+
+from functools import partial as par
 
 # General
 # ============================================================
@@ -24,6 +27,14 @@ def unzip(iterable_of_iterables):
     return zip(*iterable_of_iterables)
 
 
+def _apply_to_list_and_print_args(function, list_of_args):
+    """Does what it says. Should really be a lambda function but
+    multiprocessing requires named functions
+    """
+    print list_of_args
+    return function(*list_of_args)
+
+
 def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
     """Run function with all combinations of parameters in parallel using
     all available cores.
@@ -36,17 +47,22 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
     # Generate a complete set of combinations of parameters
     parameter_sets = it.product(*parameter_lists)
 
+    # multiprocessing doesn't include a "starmap", requires all functions
+    # to take a single argument. Use a function wrapper to fix this. Also
+    # print the list of args while we're in there.
+    wrapped_function = par(_apply_to_list_and_print_args, function)
+
     # For debugging we often need to run in serial (to get useful stack
     # traces).
     if serial_mode:
-        results_iterator = it.imap(function, parameter_sets)
+        results_iterator = it.imap(wrapped_function, parameter_sets)
          # Force evaluation (to be exactly the same as in parallel)
         results_iterator = list(results_iterator)
 
     else:
         # Run in all parameter sets in parallel
         pool = multiprocessing.Pool()
-        results_iterator = pool.imap_unordered(function, parameter_sets)
+        results_iterator = pool.imap_unordered(wrapped_function, parameter_sets)
         pool.close()
 
         # wait for everything to finish
@@ -322,23 +338,25 @@ class TestCoordinateConversion(unittest.TestCase):
             assert_polar_in_range(sph)
 
 
-def example_f(p):
-    x, y = p
+def example_f(x, y):
     return cos(x) + sin(y)
 
 
 def test_parallel_sweep():
+    """Check that a parallel run gives the same results as a non-parallel
+    run for a simple function.
+    """
     xs = sp.linspace(-pi, +pi, 30)
     ys = sp.linspace(-pi, +pi, 30)
 
     parallel_result = list(parallel_parameter_sweep(example_f, [xs, ys]))
     serial_result = list(parallel_parameter_sweep(example_f, [xs, ys], True))
-    exact_result = map(example_f, it.product(xs, ys))
+    exact_result = it.starmap(example_f, it.product(xs, ys))
 
     # Use sets for the comparison because the parallel computation destroys
     # any ordering we had before (and sets order their elements).
     assert_list_almost_equal(set(parallel_result), set(exact_result))
-    assert_list_almost_equal(serial_result, exact_result)
+    assert_list_almost_equal(set(serial_result), set(exact_result))
 
 
 def test_skew_size_check():
