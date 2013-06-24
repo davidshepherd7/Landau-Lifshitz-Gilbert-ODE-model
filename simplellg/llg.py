@@ -66,10 +66,16 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
     # Extract the parameters
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
-    Hvec = magnetic_parameters.Hvec
     Ms = magnetic_parameters.Ms
+    Hk_vec = magnetic_parameters.Hk_vec(m_cart)
 
-    h_eff = Hvec
+    # Nasty hack to allow Hvec functions or vectors
+    try:
+        Hvec = magnetic_parameters.Hvec(t)
+    except TypeError:
+        Hvec = magnetic_parameters.Hvec
+
+    h_eff = Hvec # + Hk
 
     residual = ((alpha/Ms) * sp.cross(m_cart, dmdt_cart)
                 - gamma * sp.cross(m_cart, h_eff)
@@ -82,8 +88,13 @@ def llg_cartesian_dfdm(magnetic_parameters, t, m_cart, dmdt_cart):
     # Extract the parameters
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
-    Hvec = magnetic_parameters.Hvec
     Ms = magnetic_parameters.Ms
+
+    # Nasty hack to allow Hvec functions or vectors
+    try:
+        Hvec = magnetic_parameters.Hvec(t)
+    except TypeError:
+        Hvec = magnetic_parameters.Hvec
 
     h_eff = Hvec
 

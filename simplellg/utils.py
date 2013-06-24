@@ -240,20 +240,32 @@ class MagParameters():
 
     gamma = 1.0
     Hvec = (0.0, 0.0, -2.0)
-    Hk = 0.0
+    K1 = 0.0
     Ms = 1.0
     mu0 = 1.0
+    easy_axis = (0, 0, 1)
+
 
     def __init__(self, alpha=1.0):
         self.alpha = alpha
 
+
     def H(self):
         return sp.linalg.norm(self.Hvec, ord=2)
 
-    # Hk = (2* K1) / (mu0* Ms) ??ds maybe....
-    #??ds probably wrong!
-    def K1(self):
-        return self.Hk * self.mu0 * self.Ms / 2
+
+    def Hk(self):
+        """Ansiotropy field strength."""
+        # ??ds if m is always unit vector then this is right, if not we
+        # need extra factor of Ms on bottom...
+        return (2 * self.K1) / (self.mu0 * self.Ms)
+
+
+    def Hk_vec(self, m_cart):
+        """Uniaxial anisotropy field. Magnetisation should be in normalised
+        cartesian form."""
+        return self.Hk() * sp.dot(m_cart, self.easy_axis) * self.easy_axis
+
 
     def __repr__(self):
         """Return a string representation of the parameters.

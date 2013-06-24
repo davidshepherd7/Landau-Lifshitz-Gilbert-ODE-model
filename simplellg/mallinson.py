@@ -17,7 +17,7 @@ def calculate_switching_time(magnetic_parameters, p_start, p_now):
     """
     # Cache some things to simplify the expressions later
     H = magnetic_parameters.H()
-    Hk = magnetic_parameters.Hk
+    Hk = magnetic_parameters.Hk()
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
 
@@ -201,7 +201,7 @@ class TestMallinsonDefaults(MallinsonSolverCheckerBase, unittest.TestCase):
 class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
     def setUp(self):
         mag_params = utils.MagParameters()
-        mag_params.Hk = 1.2
+        mag_params.K1 = 0.6
         self.base_init(mag_params)
 
 

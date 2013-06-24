@@ -10,7 +10,7 @@ import simplellg.utils as utils
 
 
 def llg_state_energy(sph, mag_params):
-    """ Assuming unit volume, spatially constant, spherical.
+    """Assuming unit volume, spatially constant, spherical particle.
 
     Energies taken from [Coey2010].
 
@@ -37,13 +37,11 @@ def magnetostatic_energy(sph, mag_params):
     return (0.5/3) * mu0 * Ms**2
 
 
-#??ds check the sign is correct
 def magnetocrystalline_anisotropy_energy(sph, mag_params):
-    """ Eca = K1 sin^2(polar)
-
-    Assuming easy axis = z axis."""
-    K1 = mag_params.K1()
-    return K1 * (sin(sph.pol))**2
+    """ Eca = K1 (m.e)^2"""
+    K1 = mag_params.K1
+    m_cart = utils.sph2cart(sph)
+    return K1 * (1 - sp.dot(m_cart, mag_params.easy_axis)**2)
 
 
 def zeeman_energy(sph, mag_params):
