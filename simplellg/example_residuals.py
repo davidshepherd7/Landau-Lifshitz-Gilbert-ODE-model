@@ -27,6 +27,10 @@ def tanh_residual(t, y, dydt, alpha=1.0, step_time=1.0):
 def tanh_exact(t, alpha=1.0, step_time=1.0):
     return (tanh(alpha*(t - step_time)) + 1)/2
 
+def tanh_simple_residual(t, y, dydt, alpha=1.0, step_time=1.0):
+    return (alpha * (1 - (tanh(alpha*(t - step_time)))**2)) - dydt
+def tanh_simple_exact(t, alpha=1.0, step_time=1.0):
+    return tanh(alpha*(t - step_time))
 
 # Stiff examples
 def van_der_pol_residual(t, y, dydt, mu=1000):
