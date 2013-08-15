@@ -156,8 +156,10 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         t_np1 = ts[-1] + dt
 
         # Fill in the residual for calculating dydt and the previous time
-        # and y values ready for the Newton solver.
-        residual = lambda y_np1: time_residual(func, ts+[t_np1], ys+[y_np1])
+        # and y values ready for the Newton solver. Don't use lambda
+        # function because it confuses the profiler.
+        def residual(y_np1):
+            return time_residual(func, ts+[t_np1], ys+[y_np1])
 
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.

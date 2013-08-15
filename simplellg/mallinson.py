@@ -182,9 +182,18 @@ class MallinsonSolverCheckerBase():
         a2s = energy.recompute_alpha_list(self.sphs, self.times,
                                           self.mag_params)
 
-        # Use 1/length as error estimate because it's proportional to dt.
+        # Check that we get the same values with the varying fields version
+        a3s = energy.recompute_alpha_list(self.sphs, self.times,
+                                          self.mag_params,
+                                          energy.recompute_alpha_varying_fields)
+        utils.assert_list_almost_equal( a2s, a3s, (1.1/len(self.times)))
+        # one of the examples doesn't quite pass with tol=1.0/len, so use
+        # 1.1
+
+        # Use 1/length as error estimate because it's proportional to dt
+        # and so proportional to the expected error
         def check_alpha_ok(a2):
-            return abs(a2 - self.mag_params.alpha) < 1.0/len(self.times)
+            return abs(a2 - self.mag_params.alpha) < (1.0/len(self.times))
         assert(all(map(check_alpha_ok, a2s)))
 
     # This is an important test. If this works then it is very likely that

@@ -74,30 +74,157 @@ def recompute_alpha(sph_start, sph_end, t_start, t_end, mag_params):
     dt = t_end - t_start
 
     # Estimate dEnergy / dTime
-    dE = llg_state_energy(sph_end, mag_params) \
-        - llg_state_energy(sph_start, mag_params)
-    dEdt = dE / dt
+    dEdt = (llg_state_energy(sph_end, mag_params, t_end)
+            - llg_state_energy(sph_start, mag_params, t_start)
+            )/dt
 
-    # Estimate dMagentisation / dTime then take sum of squares
-    dm = [m2 - m1 for m1, m2 in
-          zip(utils.sph2cart(sph_start), utils.sph2cart(sph_end))]
-    dmdt_sq_sum = sum([(dm_i / dt)**2 for dm_i in dm])
+    # Estimate dMagnetisation / dTime then take sum of squares
+    dmdt = [(m2 - m1)/dt for m1, m2 in
+            zip(utils.sph2cart(sph_start), utils.sph2cart(sph_end))]
+    dmdt_sq = sp.dot(dmdt, dmdt)
 
     # dE should be negative so the result should be positive.
-    return - (1/(Ms**2)) * (dEdt / dmdt_sq_sum)
+    return - (1/(Ms**2)) * (dEdt / dmdt_sq)
 
 
-def recompute_alpha_list(m_sph_list, t_list, mag_params):
+def low_accuracy_recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_end, mag_params):
+    """
+    Compute effective damping from change in magnetisation and change in
+    applied field.
+
+    From Nonlinear magnetization dynamics in nanosystems eqn (2.15).
+
+    See notes 30/7/13.
+
+    Derivatives are estimated using BDF1 finite differences.
+    """
+
+    # Only for normalised problems!
+    assert(mag_params.Ms == 1)
+
+    # Get some values
+    dt = t_end - t_start
+    m_cart_end = utils.sph2cart(sph_end)
+    h_eff_end = heff(mag_params, t_end, m_cart_end)
+    mxh = sp.cross(m_cart_end, h_eff_end)
+
+    # Finite difference derivatives
+    dhadt = (mag_params.Hvec(t_start) - mag_params.Hvec(t_end))/dt
+
+    assert(all(dhadt == 0)) # no field for now
+
+    dedt = (llg_state_energy(sph_end, mag_params, t_end)
+            - llg_state_energy(sph_start, mag_params, t_start)
+            )/dt
+
+    sigma = sp.dot(mxh, mxh) / (dedt + sp.dot(m_cart_end, dhadt))
+
+    possible_alphas = sp.roots([1, sigma, 1])
+
+    a = (-sigma + sqrt(sigma**2 - 4))/2
+    b = (-sigma - sqrt(sigma**2 - 4))/2
+
+    possible_alphas2 = [a,b]
+    utils.assert_list_almost_equal(possible_alphas, possible_alphas2)
+
+    print(sigma, possible_alphas)
+
+    def real_and_positive(x): return sp.isreal(x) and x > 0
+
+    alphas = filter(real_and_positive, possible_alphas)
+    assert(len(alphas) == 1)
+    return sp.real(alphas[0])
+
+
+def recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_end, mag_params):
+    """
+    Compute effective damping from change in magnetisation and change in
+    applied field.
+
+    See notes 30/7/13 pg 5.
+
+    Derivatives are estimated using BDF1 finite differences.
+    """
+
+    # Only for normalised problems!
+    assert(mag_params.Ms == 1)
+
+    # Get some values
+    dt = t_end - t_start
+    m_cart_end = utils.sph2cart(sph_end)
+    h_eff_end = heff(mag_params, t_end, m_cart_end)
+    mxh = sp.cross(m_cart_end, h_eff_end)
+
+    # Finite difference derivatives
+    dhadt = (mag_params.Hvec(t_start) - mag_params.Hvec(t_end))/dt
+    dedt = (llg_state_energy(sph_end, mag_params, t_end)
+            - llg_state_energy(sph_start, mag_params, t_start)
+            )/dt
+    dmdt = (sp.array(utils.sph2cart(sph_start))
+            - sp.array(m_cart_end))/dt
+
+    utils.assert_almost_equal(dedt, sp.dot(m_cart_end, dhadt)
+                              + sp.dot(dmdt, h_eff_end), 1e-2)
+
+    # print(sp.dot(m_cart_end, dhadt), dedt)
+
+    # Calculate alpha itself using the forumla derived in notes
+    alpha = ( (dedt - sp.dot(m_cart_end, dhadt))
+               /(sp.dot(h_eff_end, sp.cross(m_cart_end, dmdt))))
+
+    return alpha
+
+def recompute_alpha_varying_fields_at_midpoint(sph_start, sph_end,
+                                               t_start, t_end, mag_params):
+    """
+    Compute effective damping from change in magnetisation and change in
+    applied field.
+
+    See notes 30/7/13 pg 5.
+
+    Derivatives are estimated using midpoint method finite differences, all
+    values are computed at the midpoint (m = (m_n + m_n-1)/2, similarly for
+    t).
+    """
+
+    # Only for normalised problems!
+    assert(mag_params.Ms == 1)
+
+    # Get some values
+    dt = t_end - t_start
+    t = (t_end + t_start)/2
+    m = (sp.array(utils.sph2cart(sph_end)) + sp.array(utils.sph2cart(sph_start)))/2
+
+    h_eff = heff(mag_params, t, m)
+    mxh = sp.cross(m, h_eff)
+
+    # Finite difference derivatives
+    dhadt = (mag_params.Hvec(t_end) - mag_params.Hvec(t_start))/dt
+    dedt = (llg_state_energy(sph_end, mag_params, t_end)
+            - llg_state_energy(sph_start, mag_params, t_start)
+            )/dt
+    dmdt = (sp.array(utils.sph2cart(sph_end))
+            - sp.array(utils.sph2cart(sph_start)))/dt
+
+    # utils.assert_almost_equal(dedt, sp.dot(m_cart_end, dhadt)
+    #                           + sp.dot(dmdt, h_eff_end), 1e-2)
+
+    # print(sp.dot(m_cart_end, dhadt), dedt)
+
+    # Calculate alpha itself using the forumla derived in notes
+    alpha = -( (dedt + sp.dot(m, dhadt))
+               /(sp.dot(h_eff, sp.cross(m, dmdt))))
+
+    return alpha
+
+
+def recompute_alpha_list(m_sph_list, t_list, mag_params,
+                         alpha_func=recompute_alpha):
     """Compute a list of effective dampings, one for each step in the input
     lists.
     """
-
-    alpha_list = []
-    for m_start, m_end, t_start, t_end in \
-            zip(m_sph_list, m_sph_list[1:], t_list, t_list[1:]):
-        a = recompute_alpha(m_start, m_end, t_start, t_end, mag_params)
-        alpha_list.append(a)
-
+    alpha_list = it.imap(alpha_func, m_sph_list, m_sph_list[1:],
+                         t_list, t_list[1:], it.repeat(mag_params))
     return alpha_list
 
 
@@ -137,4 +264,9 @@ def check_zeeman(m, H, ans):
                               ans(mag_params))
 
 
-# See also mallinson.py: test_self_consistency
+# See also mallinson.py: test_self_consistency for checks on alpha
+# recomputation using Mallinson's exact solution.
+
+# To test for applied fields we would need to do real time integration,
+# which is a bit too large of a dependancy to have in a unit test, so do it
+# somewhere else.
