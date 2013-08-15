@@ -39,3 +39,10 @@ def van_der_pol_residual(t, y, dydt, mu=1000):
         dydt[1] - mu * (1 - y[0]**2)*y[1] + y[0]
         ])
 # No exact solution for van der pol...
+
+# ODE example for paper?
+def damped_oscillation_residual(omega, beta, t, y, dydt):
+    return dydt + beta*sp.exp(-beta*t)*sp.sin(omega*t) - omega*sp.exp(-beta*t)*sp.cos(omega*t)
+
+def damped_oscillation_exact(omega, beta, t):
+    return sp.exp(-beta*t) * sp.sin(omega*t)
