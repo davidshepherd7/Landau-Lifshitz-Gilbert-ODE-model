@@ -60,6 +60,12 @@ import simplellg.ode as ode
 
 #     return residual
 
+def heff(magnetic_parameters, t, m_cart):
+    Hk_vec = magnetic_parameters.Hk_vec(m_cart)
+    h_eff = magnetic_parameters.Hvec(t) + Hk_vec # - ((1.0/3)*sp.array(m_cart))
+
+    return h_eff
+
 
 def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
 
@@ -67,15 +73,7 @@ def llg_cartesian_residual(magnetic_parameters, t, m_cart, dmdt_cart):
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
     Ms = magnetic_parameters.Ms
-    Hk_vec = magnetic_parameters.Hk_vec(m_cart)
-
-    # Nasty hack to allow Hvec functions or vectors
-    try:
-        Hvec = magnetic_parameters.Hvec(t)
-    except TypeError:
-        Hvec = magnetic_parameters.Hvec
-
-    h_eff = Hvec # + Hk
+    h_eff = heff(magnetic_parameters, t, m_cart)
 
     residual = ((alpha/Ms) * sp.cross(m_cart, dmdt_cart)
                 - gamma * sp.cross(m_cart, h_eff)
@@ -90,13 +88,7 @@ def llg_cartesian_dfdm(magnetic_parameters, t, m_cart, dmdt_cart):
     gamma = magnetic_parameters.gamma
     Ms = magnetic_parameters.Ms
 
-    # Nasty hack to allow Hvec functions or vectors
-    try:
-        Hvec = magnetic_parameters.Hvec(t)
-    except TypeError:
-        Hvec = magnetic_parameters.Hvec
-
-    h_eff = Hvec
+    h_eff = heff(magnetic_parameters, t, m_cart)
 
     dfdm = - gamma * utils.skew(h_eff) + (alpha/Ms) * utils.skew(dmdt_cart)
 
@@ -181,7 +173,7 @@ def check_dfdm(m_cart):
     # Use LL to get dmdt:
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
-    Hvec = magnetic_parameters.Hvec
+    Hvec = magnetic_parameters.Hvec(None)
     Ms = magnetic_parameters.Ms
 
     h_eff = Hvec

@@ -206,7 +206,7 @@ def midpoint_residual(base_residual, ts, ys):
     y_n = ys[-2]
     y_np1 = ys[-1]
 
-    y_nph = (y_np1 + y_n) * 0.5
+    y_nph = sp.array((y_np1 + y_n) * 0.5)
     t_nph = (ts[-1] + ts[-2]) * 0.5
     dydt_nph = midpoint_dydt(ts, ys)
 
@@ -222,7 +222,7 @@ def midpoint_dydt(ts, ys):
     y_n = ys[-2]
     y_np1 = ys[-1]
 
-    dydt = (y_np1 - y_n)/dt_n
+    dydt = sp.array((y_np1 - y_n)/dt_n)
     return dydt
 
 

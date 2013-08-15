@@ -15,8 +15,13 @@ def calculate_switching_time(magnetic_parameters, p_start, p_now):
     """Calculate the time taken to switch from polar angle p_start to p_now
     with the magnetic parameters given.
     """
+
+    # # Should never quite get to pi/2
+    # if p_now >= pi/2:
+    #     return sp.inf
+
     # Cache some things to simplify the expressions later
-    H = magnetic_parameters.H()
+    H = magnetic_parameters.H(None)
     Hk = magnetic_parameters.Hk()
     alpha = magnetic_parameters.alpha
     gamma = magnetic_parameters.gamma
@@ -153,12 +158,12 @@ class MallinsonSolverCheckerBase():
         (self.sphs, self.times) = generate_dynamics(
             self.mag_params, steps=steps)
 
-        def partial_energy(sph):
-            energy.llg_state_energy(sph, self.mag_params)
-        self.energys = map(partial_energy, self.sphs)
+        def f(sph): energy.llg_state_energy(sph, self.mag_params)
+        self.energys = map(f, self.sphs)
 
     # Monotonically increasing time
     def test_increasing_time(self):
+        print(self.mag_params.Hvec)
         for a, b in zip(self.times, self.times[1:]):
             assert(b > a)
 
@@ -187,15 +192,13 @@ class MallinsonSolverCheckerBase():
     # utils (so far) are all working. So tag it as "core".
     test_damping_self_consistency.core = True
 
-    # def test_non_negative_energy(self):
-    #     assert(all(e > 0 for e in self.energys))
 
 
 # Now run the tests with various intial settings (tests are inherited from
 # the base class.
 class TestMallinsonDefaults(MallinsonSolverCheckerBase, unittest.TestCase):
     def setUp(self):
-        self.base_init(steps=10000)
+        self.base_init() # steps=10000) ??ds
 
 
 class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
@@ -209,7 +212,7 @@ class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
     def setUp(self):
         mag_params = utils.MagParameters()
         mag_params.alpha = 0.1
-        self.base_init(mag_params, steps=10000)
+        self.base_init(mag_params) # , steps=10000) ??ds
 
 
 class TestMallinsonStartAngle(MallinsonSolverCheckerBase,

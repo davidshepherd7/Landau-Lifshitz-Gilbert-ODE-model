@@ -238,33 +238,52 @@ def plot_polar_vs_time(sphs, times, title='Polar angle vs time'):
 
 class MagParameters():
 
+    def Hvec(self, t):
+        return sp.array([0,0,-2])
+
     gamma = 1.0
-    Hvec = (0.0, 0.0, -2.0)
     K1 = 0.0
     Ms = 1.0
     mu0 = 1.0
-    easy_axis = (0, 0, 1)
+    easy_axis = sp.array([0, 0, 1])
 
 
     def __init__(self, alpha=1.0):
         self.alpha = alpha
 
 
-    def H(self):
-        return sp.linalg.norm(self.Hvec, ord=2)
+    def dimensional_H(self, t):
+        return sp.linalg.norm(self.Hvec(t), ord=2)
 
 
-    def Hk(self):
+    def H(self, t):
+        return sp.linalg.norm(self.Hvec(t)/self.Ms, ord=2)
+
+
+    def dimensional_Hk(self):
         """Ansiotropy field strength."""
         # ??ds if m is always unit vector then this is right, if not we
         # need extra factor of Ms on bottom...
         return (2 * self.K1) / (self.mu0 * self.Ms)
 
 
-    def Hk_vec(self, m_cart):
+    def Hk(self):
+        """Ansiotropy field strength."""
+        # ??ds if m is always unit vector then this is right, if not we
+        # need extra factor of Ms on bottom...
+        return self.dimensional_Hk() / self.Ms
+
+
+    def dimensional_Hk_vec(self, m_cart):
         """Uniaxial anisotropy field. Magnetisation should be in normalised
         cartesian form."""
-        return self.Hk() * sp.dot(m_cart, self.easy_axis) * self.easy_axis
+        return self.dimensional_Hk() * sp.dot(m_cart, self.easy_axis) * self.easy_axis
+
+
+    def Hk_vec(self, m_cart):
+        """Normalised uniaxial anisotropy field. Magnetisation should be in
+        normalised cartesian form."""
+        return self.dimensional_Hk_vec(m_cart) / self.Ms
 
 
     def __repr__(self):
@@ -272,9 +291,10 @@ class MagParameters():
         """
         return "alpha = " + str(self.alpha) \
             + ", gamma = " + str(self.gamma) + ",\n" \
-            + "H = " + str(self.Hvec) \
-            + ", Hk = " + str(self.Hk) \
+            + "H(0) = " + str(self.Hvec(0)) \
+            + ", K1 = " + str(self.K1) \
             + ", Ms = " + str(self.Ms)
+
 
 # Smaller helper functions
 # ============================================================

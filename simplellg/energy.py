@@ -5,21 +5,24 @@ from __future__ import division
 import operator as op
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
+import itertools as it
 
 import simplellg.utils as utils
+from simplellg.llg import heff
 
-
-def llg_state_energy(sph, mag_params):
+def llg_state_energy(sph, mag_params, t=None):
     """Assuming unit volume, spatially constant, spherical particle.
 
     Energies taken from [Coey2010].
 
     Ignore stress and magnetostriction.
+
+    t can be None if applied field is not time dependant.
     """
     return exchange_energy(sph, mag_params) \
         + magnetostatic_energy(sph, mag_params) \
         + magnetocrystalline_anisotropy_energy(sph, mag_params) \
-        + zeeman_energy(sph, mag_params)
+        + zeeman_energy(sph, mag_params, t)
 
 
 def exchange_energy(sph, mag_params):
@@ -44,11 +47,12 @@ def magnetocrystalline_anisotropy_energy(sph, mag_params):
     return K1 * (1 - sp.dot(m_cart, mag_params.easy_axis)**2)
 
 
-def zeeman_energy(sph, mag_params):
-    """ Ez = - mu0 * (M.Happ)
+def zeeman_energy(sph, mag_params, t=None):
+    """ Ez = - mu0 * (M.Happ(t)), t can be None if the field is not time
+    dependant.
     """
     Ms = mag_params.Ms
-    Happ = mag_params.Hvec
+    Happ = mag_params.Hvec(t)
     mu0 = mag_params.mu0
 
     m = utils.sph2cart(sph)
@@ -103,10 +107,10 @@ def recompute_alpha_list(m_sph_list, t_list, mag_params):
 def test_zeeman():
     """Test zeeman energy for some simple cases.
     """
-    H_tests = [(0, 0, 10),
-               (-sqrt(2)/2, -sqrt(2)/2, 0.0),
-               (0, 1, 0),
-               (0.01, 0.0, 0.01),
+    H_tests = [lambda t: sp.array([0, 0, 10]),
+               lambda t: sp.array([-sqrt(2)/2, -sqrt(2)/2, 0.0]),
+               lambda t: sp.array([0, 1, 0]),
+               lambda t: sp.array([0.01, 0.0, 0.01]),
                ]
 
     m_tests = [(1.0, 0.0, 0.0),
@@ -115,8 +119,8 @@ def test_zeeman():
                (0.0, 100.0, 0.0),
                ]
 
-    answers = [lambda mP: -1 * mP.mu0 * mP.Ms * mP.H(),
-               lambda mP: mP.mu0 * mP.Ms * mP.H(),
+    answers = [lambda mP: -1 * mP.mu0 * mP.Ms * mP.H(None),
+               lambda mP: mP.mu0 * mP.Ms * mP.H(None),
                lambda _:0.0,
                lambda _:0.0,
                ]
