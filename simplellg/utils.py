@@ -11,6 +11,7 @@ import operator as op
 import functools as ft
 
 from functools import partial as par
+from os.path import join as pjoin
 
 # General
 # ============================================================
@@ -69,6 +70,22 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
         pool.join()
 
     return results_iterator
+
+
+def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-writeup/images"):
+    """Fix up layout and save a pdf of an image into my latex folder.
+    """
+
+    # Fix layout
+    figure.tight_layout(pad=0.3)
+
+    # Save a pdf into my tex image dir
+    figpath = pjoin(texpath, name)
+    figure.savefig(figpath, dpi=300, orientation='portrait',
+                   transparent=False)
+
+    print "Saved to", figpath
+    return
 
 
 # Testing helpers

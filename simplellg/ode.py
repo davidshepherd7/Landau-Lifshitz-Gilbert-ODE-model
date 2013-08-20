@@ -3,7 +3,6 @@ from __future__ import division
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 import scipy as sp
 import scipy.integrate
-from scipy.optimize import newton_krylov
 from scipy.linalg import norm
 import scipy.optimize.nonlin
 import functools as ft
@@ -11,6 +10,7 @@ from functools import partial as par
 import itertools as it
 import copy
 from scipy.interpolate import krogh_interpolate
+import sys
 
 import simplellg.utils as utils
 
@@ -49,7 +49,9 @@ class FailedTimestepError(Exception):
         return "Exception: timestep failed, next timestep should be "\
             + repr(self.new_dt)
 
+
 class ConvergenceFailure(Exception): pass
+
 
 def _timestep_scheme_factory(method):
     """Construct the functions for the named method. Input is either a
@@ -77,8 +79,10 @@ def _timestep_scheme_factory(method):
         return bdf2_residual, None, par(higher_order_start, 2)
 
     elif label == 'bdf2 mp':
-        return bdf2_residual, bdf2_mp_time_adaptor,\
-            par(higher_order_start, 2)
+        adaptor = par(time_adaptor,
+                      lte_calculator=bdf2_mp_lte_estimate,
+                      method_order=3)
+        return (bdf2_residual, adaptor, par(higher_order_start, 2))
 
     elif label == 'bdf1':
         return bdf1_residual, None, None
@@ -88,16 +92,23 @@ def _timestep_scheme_factory(method):
 
     elif label == 'midpoint ab':
         # Get values from dict (with defaults if not set).
-        n_start = _method_dict.setdefault('n_start', 2)
-        ab_start = _method_dict.setdefault('ab_start_point', 't_n')
-        use_y_np1_in_interp = _method_dict.setdefault('use_y_np1_in_interp', False)
+        n_start = _method_dict.get('n_start', 2)
+        ab_start = _method_dict.get('ab_start_point', 't_n')
+        use_y_np1_in_interp = _method_dict.get('use_y_np1_in_interp', False)
+        explicit_derivative = _method_dict.get('explicit_derivative', None)
+        fudge_factor = _method_dict.get('fudge_factor', 1.0)
 
-        interp = _method_dict.setdefault(
-            'interpolator', par(my_interpolate, n_interp=n_start,
-                                use_y_np1_in_interp=use_y_np1_in_interp))
+        interp = _method_dict.get('interpolator',
+                                  par(my_interpolate, n_interp=n_start,
+                                      use_y_np1_in_interp=use_y_np1_in_interp))
 
-        adaptor = par(midpoint_ab_time_adaptor, ab_start_point=ab_start,
-                      interpolator=interp)
+        adaptor = par(time_adaptor,
+                      lte_calculator=midpoint_ab_lte_estimate,
+                      method_order=3,
+                      ab_start_point=ab_start,
+                      interpolator=interp,
+                      explicit_derivative=explicit_derivative,
+                      fudge_factor=fudge_factor)
 
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
@@ -123,15 +134,36 @@ def higher_order_start(order, func, ys, ts):
     return ys, ts
 
 
-def odeint(func, y0, tmax, dt,
-           method='bdf2',
-           target_error=None,
-           actions_after_timestep=None,
-           **kwargs):
+def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
+    """
+    Integrate the residual "func" with initial value "y0" to time
+    "tmax". If non-adaptive (target_error=None) then all steps have size
+    "dt", otherwise "dt" is used for the first step and later steps are
+    automatically decided using the adaptive scheme.
+
+    newton_tol : specify Newton tolerance (used for minimisation of residual).
+
+    actions_after_timestep : function to modify t_np1 and y_np1 after
+    calculation (takes ts, ys as input args).
+
+    Actually just a user friendly wrapper for _odeint. Given a method name
+    (or dict of parameters) construct the required functions using
+    _timestep_scheme_factory(..), set up data storage and integrate the ODE
+    using _odeint.
+
+    Any other arguments are just passed down to _odeint.
+    """
 
     # Select the method and adaptor
     time_residual, time_adaptor, initialisation_actions = \
         _timestep_scheme_factory(method)
+
+    # Check adaptivity arguments for consistency.
+    if target_error is None and time_adaptor is not None:
+        raise ValueError("Adaptive time stepping requires a target_error")
+    if target_error is not None and time_adaptor is None:
+        raise ValueError("Adaptive time stepping requires an adaptive method")
+
 
     ts = [0.0]  # List of times (floats)
     ys = [sp.array(y0, ndmin=1)]  # List of y vectors (ndarrays)
@@ -139,12 +171,15 @@ def odeint(func, y0, tmax, dt,
     # Now call the actual function to do the work
     return _odeint(func, ys, ts, dt, tmax, time_residual,
                    target_error, time_adaptor, initialisation_actions,
-                   actions_after_timestep, **kwargs)
+                   **kwargs)
 
 
 def _odeint(func, ys, ts, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
-            initialisation_actions=None, actions_after_timestep=None):
+            initialisation_actions=None, actions_after_timestep=None,
+            newton_tol=1e-8):
+    """Underlying function for odeint.
+    """
 
     if initialisation_actions is not None:
         ys, ts = initialisation_actions(func, ys, ts)
@@ -156,7 +191,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         t_np1 = ts[-1] + dt
 
         # Fill in the residual for calculating dydt and the previous time
-        # and y values ready for the Newton solver. Don't use lambda
+        # and y values ready for the Newton solver. Don't use a lambda
         # function because it confuses the profiler.
         def residual(y_np1):
             return time_residual(func, ts+[t_np1], ys+[y_np1])
@@ -164,7 +199,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
         try:
-            y_np1 = newton_krylov(residual, ys[-1], method='gmres')
+            y_np1 = newton(residual, ys[-1], tol=newton_tol)
         except sp.optimize.nonlin.NoConvergence:
             dt = scale_timestep(dt, None, None, None,
                                 scaling_function=failed_timestep_scaling)
@@ -200,8 +235,134 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
     return ys, ts
 
 
+# Newton solver and helpers
+# ============================================================
+
+
+def newton(residual, x0, jacobian=None, tol=1e-8, solve_function=None):
+    """Find the minimum of the residual function using Newton's method.
+
+    Optionally specify a Jacobian, a tolerance and/or a function to solve
+    the linear system J.dx = r.
+
+    If no Jacobian is given the Jacobian is finite differenced.
+    If no solve function is given then sp.linalg.solve is used.
+
+    Max Newton iterations is 20.
+
+    Norm for measuring residual is max(abs(..)).
+    """
+    if jacobian is None:
+        jacobian = par(finite_diff_jacobian, residual)
+
+    if solve_function is None:
+        solve_function = sp.linalg.solve
+
+    # Wrap the solve function to deal with non-matrix cases (i.e. when we
+    # only have one degree of freedom and the "Jacobian" is just a number).
+    def wrapped_solve(A,b):
+        if len(b) == 1:
+            return b/A[0][0]
+        else:
+            return solve_function(A, b)
+
+    # Call the real Newton solve function
+    return _newton(residual, x0, jacobian, tol, wrapped_solve, 0)
+
+
+def _newton(residual, x0, jacobian, tol, solve_function, count):
+    """Core function of newton(...)."""
+
+    if count > 20:
+        raise sp.optimize.nonlin.NoConvergence
+
+    r = residual(x0)
+
+    # If max entry is below tol then return
+    if sp.amax(abs(r)) < tol:
+        return x0
+
+    # Otherwise reduce residual using Newtons method + recurse
+    else:
+        J = jacobian(x0)
+        dx = solve_function(J, r)
+        return _newton(residual, x0 - dx, jacobian, tol, solve_function, count+1)
+
+
+def finite_diff_jacobian(residual, x, eps=1e-10):
+    """Calculate the matrix of derivatives of the residual w.r.t. input
+    values by finite differencing.
+    """
+    n = len(x)
+    J = sp.empty((n, n))
+
+    # For each entry in x
+    for i in range(0, n):
+        xtemp = x.copy() # Force a copy so that we don't modify x
+        xtemp[i] += eps
+        J[:,i] = (residual(xtemp) - residual(x))/eps
+
+    return J
+
+
+
+# Interpolation helpers
+# ============================================================
+
+def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
+    # Find the start and end of the slice of ts, ys that we want to use for
+    # interpolation.
+    start = -n_interp if use_y_np1_in_interp else -n_interp - 1
+    end = None if use_y_np1_in_interp else -1
+
+    # Nasty things could go wrong if you try to start adapting with not
+    # enough points because [-a:-b] notation lets us go past the ends of
+    # the list without throwing an error! Check it!
+    assert len(ts[start:end]) == n_interp
+
+    # Actually interpolate the values
+    t_nph = (ts[-1] + ts[-2])/2
+    t_nmh = (ts[-2] + ts[-3])/2
+    interps = krogh_interpolate(
+        ts[start:end], ys[start:end], [t_nmh, ts[-2], t_nph], der=[0, 1, 2])
+
+    # Unpack (can't get "proper" unpacking to work)
+    dy_nmh = interps[1][0]
+    dy_n = interps[1][1]
+    y_nph = interps[0][2]
+    dy_nph = interps[1][2]
+    ddy_nph = interps[2][2]
+
+    return dy_nmh, y_nph, dy_nph, ddy_nph, dy_n
+
+
+def midpoint_approximation_fake_interpolation(ts, ys):
+    # Just use midpoint approximation for "interpolation"!
+
+    dt_n = (ts[-1] + ts[-2])/2
+    dt_nm1 = (ts[-2] + ts[-3])/2
+
+    # Use midpoint average approximations
+    y_nph = (ys[-1] + ys[-2])/2
+    dy_nph = (ys[-1] - ys[-2])/dt_n
+    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
+
+    # Finite diff it
+    ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
+
+    return dy_nmh, y_nph, dy_nph, ddy_nph, None
+
+
 # Timestepper residual calculation functions
 # ============================================================
+
+def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
+    """Take a single step of the Adams-Bashforth 2 method.
+    """
+    dtr = dt_n / dt_nm1
+    y_np1 = y_n + 0.5*dt_n*((2 + dtr)*dy_n - dtr*dy_nm1)
+    return y_np1
+
 
 def midpoint_residual(base_residual, ts, ys):
     dt_n = ts[-1] - ts[-2]
@@ -391,43 +552,28 @@ def scale_timestep(dt, target_error, error_norm, order,
         return scaling_factor * dt
 
 
-def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
-    """ Calculate the solution at time n.
+def time_adaptor(ts, ys, target_error, method_order, lte_calculator, **kwargs):
+    """General base function for time adaptivity function.
 
-    From: my code... ??ds
+    Partially evaluate with a method order and an lte_calculator to create
+    a complete time adaptor function.
+
+    Other args are passed down to the lte calculator.
     """
-    dtr = dt_n / dt_nm1
-    y_np1 = y_n + 0.5*dt_n*((2 + dtr)*dy_n - dtr*dy_nm1)
-    return y_np1
+
+    # Get the local truncation error estimator
+    lte_est = lte_calculator(ts, ys, **kwargs)
+
+    # Get the 2-norm
+    error_norm = sp.linalg.norm(sp.array(lte_est, ndmin=1), 2)
+
+    # Return the scaled timestep (with lots of checks).
+    return scale_timestep(ts[-1] - ts[-2], target_error, error_norm, method_order)
 
 
-def bdf2_lte(dt_n, ys, dys, d2ys, d3ys):
-    """ From Prinja's thesis.
-    """
-    d3ydt_n = d3ys[-1]
-    return (2.0/9) * d3ydt_n * dt_n**3
-
-
-def trapezoid_lte(dt_n, ys, dys, d2ys, d3ys):
-    """ Calculated myself, notes: 15/2/13.
-    """
-    return (1.0/12) * dt_n**3 * d3ys[-1]
-
-
-def midpoint_lte(dt_n, ys, dys, d2ys, d3ys, dfdy):
-    """ notes: 20/2/13
-    """
-    if dfdy is None:
-        dfdy = 0.
-
-    # dfdy should be able to be a function but not implelmented yet
-
-    return ((dt_n**3)/24) * (d3ys[-1] - sp.dot(dfdy, d2ys[-1]))
-
-
-def bdf2_mp_time_adaptor(ts, ys, target_error):
-    """ Calculate a new timestep size based on estimating the error from
-    the previous timestep. Weighting numbers stolen from oopmh-lib.
+def bdf2_mp_lte_estimate(ts, ys):
+    """Estimate LTE using combination of bdf2 and explicit midpoint. From
+    oomph-lib and G&S.
     """
 
     # Get local values (makes maths more readable)
@@ -463,53 +609,8 @@ def bdf2_mp_time_adaptor(ts, ys, target_error):
 
     # Calculate truncation error -- oomph-lib
     error = (y_np1 - y_np1_EMP) * error_weight
-    error_norm = sp.linalg.norm(error, 2)
 
-    return scale_timestep(dt_n, target_error, error_norm, 3)
-
-
-def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
-    # Find the start and end of the slice of ts, ys that we want to use for
-    # interpolation.
-    start = -n_interp if use_y_np1_in_interp else -n_interp - 1
-    end = None if use_y_np1_in_interp else -1
-
-    # Nasty things could go wrong if you try to start adapting with not
-    # enough points because [-a:-b] notation lets us go past the ends of
-    # the list without throwing an error! Check it!
-    assert len(ts[start:end]) == n_interp
-
-    # Actually interpolate the values
-    t_nph = (ts[-1] + ts[-2])/2
-    t_nmh = (ts[-2] + ts[-3])/2
-    interps = krogh_interpolate(
-        ts[start:end], ys[start:end], [t_nmh, ts[-2], t_nph], der=[0, 1, 2])
-
-    # Unpack (can't get "proper" unpacking to work)
-    dy_nmh = interps[1][0]
-    dy_n = interps[1][1]
-    y_nph = interps[0][2]
-    dy_nph = interps[1][2]
-    ddy_nph = interps[2][2]
-
-    return dy_nmh, y_nph, dy_nph, ddy_nph, dy_n
-
-
-def midpoint_approximation_fake_interpolation(ts, ys):
-    # Just use midpoint approximation for "interpolation"!
-
-    dt_n = (ts[-1] + ts[-2])/2
-    dt_nm1 = (ts[-2] + ts[-3])/2
-
-    # Use midpoint average approximations
-    y_nph = (ys[-1] + ys[-2])/2
-    dy_nph = (ys[-1] - ys[-2])/dt_n
-    dy_nmh = (ys[-2] - ys[-3])/dt_nm1
-
-    # Finite diff it
-    ddy_nph = (dy_nph - dy_nmh) / (dt_n/2 + dt_nm1/2)
-
-    return dy_nmh, y_nph, dy_nph, ddy_nph, None
+    return error
 
 
 def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
@@ -565,9 +666,11 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
     return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
-def midpoint_ab_time_adaptor(ts, ys, target_error,
-                             interpolator=my_interpolate,
-                             ab_start_point='t_n'):
+
+def midpoint_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
+                             ab_start_point='t_n',
+                             explicit_derivative=None,
+                             fudge_factor=1.0):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -585,6 +688,7 @@ def midpoint_ab_time_adaptor(ts, ys, target_error,
     y_nm1_MP = ys[-3]
 
     t_n = ts[-2]
+    t_nm1 = ts[-3]
     t_nph = (ts[-1] + ts[-2])/2
     t_nmh = (ts[-2] + ts[-3])/2
 
@@ -594,11 +698,37 @@ def midpoint_ab_time_adaptor(ts, ys, target_error,
 
     # Interpolate exact value and derivatives at t_nph
     # ============================================================
-    dy_nmh, y_nph, dy_nph, _, dy_n = interpolator(ts, ys)
+
+    if explicit_derivative is None:
+        dy_nmh, y_nph, dy_nph, _, dy_n = interpolator(ts, ys)
+
+    # we have a useable explicit derivative function, use it to calculate
+    # some derivatives. This WONT WORK with some of the weirder
+    # settings.... Should fix it.. ??ds
+    else:
+        assert(ab_start_point=='t_n')
+        # assert(interpolator==par(my_interpolate, n_interp=2))
+
+        # dy_nph = explicit_derivative(t_nph)
+        # dy_nmh = explicit_derivative(t_nmh)
+
+        dy_nm1 = explicit_derivative(t_nm1, y_nm1_MP)
+        dy_n = explicit_derivative(t_n, y_n_MP)
+        dy_np1 = explicit_derivative(ts[-1], y_np1_MP)
+
+        # Just interpolate value + derivative at t_nph
+        interps = krogh_interpolate([ts[-4], t_nm1, t_nm1, t_n, t_n,], # input ts
+                                    [ys[-4], y_nm1_MP, dy_nm1, y_n_MP, dy_n,], # inputs ys
+                                    [t_nph], der=[0, 1]) # outputs wanted
+
+        y_nph = interps[0][0]
+        dy_nph = interps[1][0]
+
 
     # Calculate this part of the truncation error (see notes)
     # ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
     ymid_estimation_error = dt_n*(dy_nph - dy_nmid)
+
 
     # Use an AB2 predictor to eliminate the dddy_nph term
     # ============================================================
@@ -620,6 +750,7 @@ def midpoint_ab_time_adaptor(ts, ys, target_error,
     y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
                          AB_dt_nm1, AB_dy_start)
 
+
     # Get the truncation error, scaling factor and new time step size
     # ============================================================
 
@@ -636,11 +767,7 @@ def midpoint_ab_time_adaptor(ts, ys, target_error,
         err = "Don't recognise ab_start_point value "+str(ab_start_point)
         raise ValueError(err)
 
-    # Get a norm
-    error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
-
-    # Return the scaled timestep (with lots of checks).
-    return scale_timestep(dt_n, target_error, error_norm, 3)
+    return midpoint_lte * fudge_factor
 
 
 def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
@@ -743,8 +870,10 @@ def test_bad_timestep_handling():
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
+    adaptor = par(time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=3)
+
     ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
-                     bdf2_residual, tol, bdf2_mp_time_adaptor)
+                     bdf2_residual, tol, adaptor)
 
     # plt.plot(ts,ys)
     # plt.plot(ts[1:], utils.ts2dts(ts))
@@ -872,6 +1001,7 @@ def test_sharp_dt_change():
     # Run it
     return check_problem('midpoint ab', residual, exact, tol=tol)
 
+
 # def test_with_stiff_problem():
 #     """Check that midpoint fe ab works well for stiff problem (i.e. has a
 #     non-insane number of time steps).
@@ -891,3 +1021,16 @@ def test_sharp_dt_change():
 
 #     n_steps = len(ts)
 #     assert n_steps < 5000
+
+def test_newton():
+    tests = [(lambda x: sp.array([x**2 - 2]), sp.array([sp.sqrt(2)])),
+             (lambda x: sp.array([x[0]**2 - 2, x[1] - x[0] - 1]),
+              sp.array([sp.sqrt(2), sp.sqrt(2) + 1])),
+             ]
+
+    for res, exact in tests:
+        check_newton(res, exact)
+
+def check_newton(residual, exact):
+    solution = newton(residual, sp.array([1.0]*len(exact)))
+    utils.assert_list_almost_equal(solution, exact)
