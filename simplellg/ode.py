@@ -224,7 +224,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
             except FailedTimestepError, exception_data:
-                dt = exception_data.new_dt
+                sys.stderr.write('Rejected time step\n')
+                dt= exception_data.new_dt
                 continue
 
         # Update results storage (don't do this earlier in case the time
@@ -361,6 +362,15 @@ def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
     """
     dtr = dt_n / dt_nm1
     y_np1 = y_n + 0.5*dt_n*((2 + dtr)*dy_n - dtr*dy_nm1)
+    return y_np1
+
+
+def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
+    """Take a single step of the explicit midpoint rule.
+    From G&S pg. 715 and Prinja's thesis pg.45.
+    """
+    dtr = dt_n / dt_nm1
+    y_np1 = (1 - dtr**2)*y_n + (1 + dtr)*dt_n*dy_n + (dtr**2)*(y_nm1)
     return y_np1
 
 
@@ -571,7 +581,36 @@ def time_adaptor(ts, ys, target_error, method_order, lte_calculator, **kwargs):
     return scale_timestep(ts[-1] - ts[-2], target_error, error_norm, method_order)
 
 
-def bdf2_mp_lte_estimate(ts, ys):
+def bdf2_mp_prinja_lte_estimate(ts, ys):
+    """Estimate LTE using combination of bdf2 and explicit midpoint. From
+    Prinja's thesis.
+    """
+
+    # Get local values (makes maths more readable)
+    dt_n = ts[-1] - ts[-2]
+    dt_nm1 = ts[-2] - ts[-3]
+    dtr = dt_n / dt_nm1
+    dtrinv = 1.0 / dtr
+
+    y_np1 = ys[-1]
+    y_n = ys[-2]
+    y_nm1 = ys[-3]
+
+    # Invert bdf2 to get derivative
+    dy_n = bdf2_dydt(ts, ys)
+
+    # Calculate predictor value (variable dt explicit mid point rule)
+    y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
+
+    error_weight = (dt_nm1 + dt_n) / (3*dt_n + 2*dt_nm1)
+
+    # Calculate truncation error -- oomph-lib
+    error = (y_np1 - y_np1_EMR) * error_weight
+
+    return error
+
+
+def bdf2_mp_gs_lte_estimate(ts, ys):
     """Estimate LTE using combination of bdf2 and explicit midpoint. From
     oomph-lib and G&S.
     """
@@ -580,6 +619,7 @@ def bdf2_mp_lte_estimate(ts, ys):
     dt_n = ts[-1] - ts[-2]
     dt_nm1 = ts[-2] - ts[-3]
     dtr = dt_n / dt_nm1
+    dtrinv = 1.0 / dtr
 
     y_np1 = ys[-1]
     y_n = ys[-2]
@@ -589,28 +629,24 @@ def bdf2_mp_lte_estimate(ts, ys):
     # was used in the residual calculation).
     dy_n = bdf2_dydt(ts, ys)
 
-    # # Calculate predictor value (variable dt explicit mid point rule) --G&S version
-    # y_np1_EMP = y_n + (1 + dtr)*dt_n*dy_n - (dtr**2)*y_n + (dtr**2)*y_nm1
+    # Calculate predictor value (variable dt explicit mid point rule)
+    y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
 
-    # Calculate predictor value (variable dt explicit mid point rule) --oomph-
-    # lib version
-    y_np1_EMP =  (1.0 - dtr**2) * y_n\
-        + (dtr**2) * y_nm1 \
-        + (1.0 + dtr)*dt_n * dy_n
-
-    # # Calculate truncation error -- G&S
-    # error = (y_np1 - y_np1_EMP) * ((1 + dt_nm1/dt_n)**2) /\
-    #     (1 + 3*(dt_nm1/dt_n) + 4*(dt_nm1/dt_n)**2 + 2*(dt_nm1/dt_n)**3)
-
-    dtrinv = 1.0 / dtr
     error_weight = ((1.0 + dtrinv)**2) / \
         (1.0 + 3.0*dtrinv + 4.0 * dtrinv**2
          + 2.0 * dtrinv**3)
 
     # Calculate truncation error -- oomph-lib
-    error = (y_np1 - y_np1_EMP) * error_weight
+    error = (y_np1 - y_np1_EMR) * error_weight
 
     return error
+
+
+# ??Ds use prinja's
+bdf2_mp_lte_estimate = bdf2_mp_prinja_lte_estimate
+
+
+def tr_ab_lte_estimate(ts, ys, dys)
 
 
 def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):

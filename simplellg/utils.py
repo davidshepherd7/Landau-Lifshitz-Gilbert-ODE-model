@@ -72,6 +72,20 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
     return results_iterator
 
 
+def partial_lists(l, start=0):
+    """Given a list l return a list of "partial lists" (probably not the
+    right term...). "start" specifies a minimum list length.
+
+    ie.
+
+    l = [0, 1, 2, 3]
+
+    partial_lists(l) = [[0], [0, 1], [0, 1, 2], [0, 1, 2, 3]]
+    """
+
+    return [l[:i] for i in range(start, len(l)+1)]
+
+
 def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-writeup/images"):
     """Fix up layout and save a pdf of an image into my latex folder.
     """
@@ -86,6 +100,23 @@ def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-wri
 
     print "Saved to", figpath
     return
+
+def memoize(f):
+    """ Memoization decorator for a function taking multiple arguments.
+
+    From http://code.activestate.com/recipes/578231-probably-the-fastest-memoization-decorator-in-the-/
+    (in the comments)
+    """
+    class memodict(dict):
+        def __init__(self, f):
+            self.f = f
+        def __call__(self, *args):
+            return self[args]
+        def __missing__(self, key):
+            ret = self[key] = self.f(*key)
+            return ret
+    return memodict(f)
+
 
 
 # Testing helpers
