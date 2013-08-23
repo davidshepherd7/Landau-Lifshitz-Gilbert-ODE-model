@@ -118,6 +118,17 @@ def _timestep_scheme_factory(method):
         # starting point.
         return TrapezoidRuleResidual(), None, par(higher_order_start, 2)
 
+    elif label == 'tr ab':
+
+        dydt_func = _method_dict.get('dydt_func')
+
+        adaptor = par(time_adaptor,
+                      lte_calculator=tr_ab_lte_estimate,
+                      dydt_func=dydt_func,
+                      method_order=3)
+
+        return TrapezoidRuleResidual(), adaptor, par(higher_order_start, 2)
+
     else:
         message = "Method '"+label+"' not recognised."
         raise ValueError(message)
@@ -646,7 +657,24 @@ def bdf2_mp_gs_lte_estimate(ts, ys):
 bdf2_mp_lte_estimate = bdf2_mp_prinja_lte_estimate
 
 
-def tr_ab_lte_estimate(ts, ys, dys)
+def tr_ab_lte_estimate(ts, ys, dydt_func):
+    dt_n = ts[-1] - ts[-2]
+    dt_nm1 = ts[-2] - ts[-3]
+    dtrinv = dt_nm1 / dt_n
+
+    y_np1 = ys[-1]
+    y_n = ys[-2]
+    y_nm1 = ys[-3]
+
+    dy_n = dydt_func(ts[-2], y_n)
+    dy_nm1 = dydt_func(ts[-3], y_nm1)
+
+    # Predict with AB2
+    y_np1_AB2 = ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1)
+
+    # Estimate LTE
+    lte_est = (y_np1 - y_np1_AB2) / (3*(1 + dtrinv))
+    return lte_est
 
 
 def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
