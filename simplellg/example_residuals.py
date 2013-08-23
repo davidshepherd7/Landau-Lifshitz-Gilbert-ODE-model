@@ -20,6 +20,12 @@ def exp_of_minus_t_exact(t): return exp(-t)
 def poly_residual(t, y, dydt): return 4*t**3 + 2*t - dydt
 def poly_exact(t): return t**4 + t**2
 
+# Useful because 2nd order integrators should be exact (and adaptive ones
+# should recognise this and rapidly increase dt).
+def square_residual(t, y, dydt): return 2*t - dydt
+def square_dydt(t, y): return square_residual(t, y, 0)
+def square_exact(t): return t**2
+
 
 def exp_of_poly_residual(t, y, dydt): return y*(1 - 3*t**2) - dydt
 def exp_of_poly_dydt(t, y): return exp_of_poly_residual(t, y, 0)
