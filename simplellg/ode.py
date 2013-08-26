@@ -81,7 +81,7 @@ def _timestep_scheme_factory(method):
     elif label == 'bdf2 mp':
         adaptor = par(time_adaptor,
                       lte_calculator=bdf2_mp_lte_estimate,
-                      method_order=3)
+                      method_order=2)
         return (bdf2_residual, adaptor, par(higher_order_start, 3))
 
     elif label == 'bdf1':
@@ -104,7 +104,7 @@ def _timestep_scheme_factory(method):
 
         adaptor = par(time_adaptor,
                       lte_calculator=midpoint_ab_lte_estimate,
-                      method_order=3,
+                      method_order=2,
                       ab_start_point=ab_start,
                       interpolator=interp,
                       explicit_derivative=explicit_derivative,
@@ -125,7 +125,7 @@ def _timestep_scheme_factory(method):
         adaptor = par(time_adaptor,
                       lte_calculator=tr_ab_lte_estimate,
                       dydt_func=dydt_func,
-                      method_order=3)
+                      method_order=2)
 
         return TrapezoidRuleResidual(), adaptor, par(higher_order_start, 2)
 
@@ -155,12 +155,12 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
     newton_tol : specify Newton tolerance (used for minimisation of residual).
 
     actions_after_timestep : function to modify t_np1 and y_np1 after
-    calculation (takes ts, ys as input args).
+    calculation (takes ts, ys as input args, returns modified t_np1, y_np1).
 
     Actually just a user friendly wrapper for _odeint. Given a method name
-    (or dict of parameters) construct the required functions using
-    _timestep_scheme_factory(..), set up data storage and integrate the ODE
-    using _odeint.
+    (or dict of time integration method parameters) construct the required
+    functions using _timestep_scheme_factory(..), set up data storage and
+    integrate the ODE using _odeint.
 
     Any other arguments are just passed down to _odeint.
     """
@@ -437,11 +437,9 @@ def bdf2_dydt(ts, ys):
     y_nm1 = ys[-3]
 
     # Copied from oomph-lib (algebraic rearrangement of G&S forumla).
-    weights = [1.0/dt_n + 1.0/(dt_n + dt_nm1),
-               - (dt_n + dt_nm1)/(dt_n * dt_nm1),
-               dt_n / ((dt_n + dt_nm1) * dt_nm1)]
-
-    dydt = sp.dot(weights, [y_np1, y_n, y_nm1])
+    dydt = (((1.0/dt_n) + (1.0/(dt_n + dt_nm1))) * y_np1
+            - ((dt_n + dt_nm1)/(dt_n * dt_nm1)) * y_n
+            + (dt_n / ((dt_n + dt_nm1) * dt_nm1)) * y_nm1)
 
     return dydt
 
@@ -523,7 +521,7 @@ def default_dt_scaling(target_error, error_estimate, timestepper_order):
     Taken from Gresho and Sani (various places).
     """
     try:
-        scaling_factor = (target_error/error_estimate)**(1.0/timestepper_order)
+        scaling_factor = (target_error/error_estimate)**(1.0/(1.0 + timestepper_order))
 
     except ZeroDivisionError:
         scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
@@ -934,7 +932,7 @@ def test_bad_timestep_handling():
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
-    adaptor = par(time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=3)
+    adaptor = par(time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=2)
 
     ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
                      bdf2_residual, tol, adaptor)
