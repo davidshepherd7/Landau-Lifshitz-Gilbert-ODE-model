@@ -82,7 +82,7 @@ def _timestep_scheme_factory(method):
         adaptor = par(time_adaptor,
                       lte_calculator=bdf2_mp_lte_estimate,
                       method_order=3)
-        return (bdf2_residual, adaptor, par(higher_order_start, 2))
+        return (bdf2_residual, adaptor, par(higher_order_start, 3))
 
     elif label == 'bdf1':
         return bdf1_residual, None, None
@@ -608,7 +608,7 @@ def bdf2_mp_prinja_lte_estimate(ts, ys):
     y_nm1 = ys[-3]
 
     # Invert bdf2 to get derivative
-    dy_n = bdf2_dydt(ts, ys)
+    dy_n = bdf2_dydt(ts[:-1], ys[:-1])
 
     # Calculate predictor value (variable dt explicit mid point rule)
     y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
@@ -638,7 +638,7 @@ def bdf2_mp_gs_lte_estimate(ts, ys):
 
     # Invert bdf2 to get predictor data (using the exact same function as
     # was used in the residual calculation).
-    dy_n = bdf2_dydt(ts, ys)
+    dy_n = bdf2_dydt(ts[:-1], ys[:-1])
 
     # Calculate predictor value (variable dt explicit mid point rule)
     y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
@@ -930,7 +930,7 @@ def test_bad_timestep_handling():
             temp.append(temp[-1] + v)
         return temp
 
-    dts = [1e-6, 1e-6, (1. - 0.01)*tmax]
+    dts = [1e-6, 1e-6, 1e-6, (1. - 0.01)*tmax]
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
@@ -944,7 +944,7 @@ def test_bad_timestep_handling():
     # plt.plot(ts, map(exp3_exact, ts))
     # plt.show()
 
-    overall_tol = len(ys) * tol * 1.2  # 1.2 is a fudge factor...
+    overall_tol = len(ys) * tol * 2  # 2 is a fudge factor...
     utils.assert_list_almost_equal(ys, map(exp3_exact, ts), overall_tol)
 
 
