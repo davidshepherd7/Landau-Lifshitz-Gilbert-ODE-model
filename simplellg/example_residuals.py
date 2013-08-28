@@ -3,22 +3,24 @@
 from scipy import exp, tanh
 import scipy as sp
 
-def exp_residual(ts, y, dydt): return y - dydt
-def exp_dydt(t, y): return exp(t)
+def exp_residual(t, y, dydt): return y - dydt
+def exp_dydt(t, y): return y
 def exp_exact(t, y): return exp(t)
 
 
-def exp3_residual(ts, y, dydt): return 3*y - dydt
-def exp3_dydt(t, y): return 3 * exp(3*t)
+def exp3_residual(t, y, dydt): return 3*y - dydt
+def exp3_dydt(t, y): return 3 * y
 def exp3_exact(t): return exp(3*t)
 
 # Not sure this works..
-def exp_of_minus_t_residual(ts, y, dydt): return y + dydt
+def exp_of_minus_t_residual(t, y, dydt): return exp_of_minus_t_dydt(t,y) - dydt
 def exp_of_minus_t_exact(t): return exp(-t)
+def exp_of_minus_t_dydt(t, y): return -y
 
 
 def poly_residual(t, y, dydt): return 4*t**3 + 2*t - dydt
 def poly_exact(t): return t**4 + t**2
+def poly_dydt(t, y): return poly_residual(t, y, 0)
 
 # Useful because 2nd order integrators should be exact (and adaptive ones
 # should recognise this and rapidly increase dt).
@@ -27,8 +29,8 @@ def square_dydt(t, y): return square_residual(t, y, 0)
 def square_exact(t): return t**2
 
 
-def exp_of_poly_residual(t, y, dydt): return y*(1 - 3*t**2) - dydt
-def exp_of_poly_dydt(t, y): return exp_of_poly_residual(t, y, 0)
+def exp_of_poly_residual(t, y, dydt): return exp_of_poly_dydt(t, y) - dydt
+def exp_of_poly_dydt(t, y): return y*(1 - 3*t**2)
 def exp_of_poly_exact(t): return exp(t - t**3)
 
 
