@@ -112,6 +112,14 @@ def _timestep_scheme_factory(method):
 
         return midpoint_residual, adaptor, par(higher_order_start, n_start)
 
+    elif label == 'midpoint ebdf3':
+        dydt_func = _method_dict.get('dydt_func', None)
+        lte_est = par(ebdf3_lte_estimate, dydt_func=dydt_func)
+        adaptor = par(time_adaptor,
+                      lte_calculator=lte_est,
+                      method_order=2)
+        return midpoint_residual, adaptor, par(higher_order_start, 3)
+
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
         # getting derivatives of y from implicit formulas we need an extra
@@ -383,6 +391,40 @@ def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
     dtr = dt_n / dt_nm1
     y_np1 = (1 - dtr**2)*y_n + (1 + dtr)*dt_n*dy_n + (dtr**2)*(y_nm1)
     return y_np1
+
+
+def ebdf3_step(ts, ys, dyn):
+    """Calculate one step of "explicitBDF3", i.e. the third order analogue
+    of explicit midpoint rule.
+
+    Derived using the following commands in maple:
+
+     f := dyn = (ynp1 - yn)/dtn - (dtn/(dtn + dtnm1))*((ynp1 - yn)/dtn - (yn - ynm1)/dtnm1) - ((dtn*dtnm1)/(dtn + dtnm1 + dtnm2)) * ((((ynp1 - yn)/dtn - (yn - ynm1)/dtnm1)/(dtn + dtnm1)) - ((yn - ynm1)/dtnm1 - (ynm1 - ynm2)/dtnm2)/(dtnm1 + dtnm2));
+    lprint(collect(solve(f, ynp1), [dyn, yn, ynp1, ynm1, ynm2]));
+
+    Could probably do the same thing using sympy actually.
+
+
+    See notes 28/8/13 for where this comes from (also Hairer et. al. 1991
+    pgs 364,400, but it's fairly tricky to work out).
+    """
+
+    dtn = ts[-1] - ts[-2]
+    dtnm1 = ts[-2] - ts[-3]
+    dtnm2 = ts[-3] - ts[-4]
+
+    yn = ys[-2]
+    ynm1 = ys[-3]
+    ynm2 = ys[-4]
+
+    # Split into separate terms for easier debugging
+    a = ((dtn**3*dtnm1**2*dtnm2 + dtn**3*dtnm1*dtnm2**2 + 2*dtn**2*dtnm1**3*dtnm2 + 3*dtn**2*dtnm1**2*dtnm2**2 + dtn **2*dtnm1*dtnm2**3 + dtn*dtnm1**4*dtnm2 + 2*dtn*dtnm1**3*dtnm2**2 + dtn*dtnm1**2*dtnm2**3)/dtnm1**2/ dtnm2/(dtnm1 + dtnm2)**2*dyn)
+
+    b = (-2*dtn**3*dtnm1*dtnm2-dtn**3*dtnm2**2-3*dtn**2*dtnm1**2*dtnm2-3*dtn** 2*dtnm1*dtnm2**2-dtn**2*dtnm2**3+dtnm1**4*dtnm2+2*dtnm1**3*dtnm2**2+dtnm1**2*dtnm2**3)/dtnm1**2/ dtnm2/(dtnm1+dtnm2)**2*yn
+    c = (dtn**3*dtnm1**2+2*dtn**3*dtnm1*dtnm2+dtn**3*dtnm2**2+dtn**2*dtnm1**3+3* dtn**2*dtnm1**2*dtnm2+3*dtn**2*dtnm1*dtnm2**2+dtn**2*dtnm2**3)/dtnm1**2/dtnm2/(dtnm1+dtnm2)**2* ynm1
+    d = (-dtn**3*dtnm1**2-dtn**2*dtnm1**3)/dtnm1**2/dtnm2/(dtnm1+dtnm2)**2*ynm2
+
+    return a + b + c + d
 
 
 def midpoint_residual(base_residual, ts, ys):
@@ -832,6 +874,23 @@ def midpoint_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
     return midpoint_lte * fudge_factor
 
 
+def ebdf3_lte_estimate(ts, ys, dydt_func=None):
+    """Estimate lte for any second order integration method by comparing
+    with the third order explicit bdf method.
+    """
+
+    # Use BDF approximation to dyn if no function given
+    if dydt_func is None:
+        assert(0)
+        dyn = bdf3_dydt(ts, ys)
+    else:
+        dyn = dydt_func(ts[-2], ys[-2])
+
+    y_np1_EBDF3 = ebdf3_step(ts, ys, dyn)
+
+    return ys[-1] - y_np1_EBDF3
+
+
 def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
                                 interpolator=my_interpolate):
     """ See notes: 19-20/3/2013 for algebra and explanations.
@@ -1033,17 +1092,27 @@ def test_adaptive_dt():
 
     methods = [('bdf2 mp', 1e-4),
                # ('midpoint fe ab', 1e-4),
-               ('midpoint ab', 1e-4),
+               # ('midpoint ab', 1e-4),
+               ({'label':'midpoint ebdf3'}, 1e-5),
+               ({'label':'tr ab'}, 1e-4),
                ]
 
-    functions = [(exp_residual, exp),
-                 (exp_of_minus_t_residual, exp_of_minus_t_exact),
-                 (poly_residual, poly_exact),
-                 (exp_of_poly_residual, exp_of_poly_exact)
+    functions = [(exp_residual, exp, exp_dydt),
+                 # (exp_of_minus_t_residual, exp_of_minus_t_exact, exp_of_minus_t_dydt),
+                 (poly_residual, poly_exact, poly_dydt),
+                 (exp_of_poly_residual, exp_of_poly_exact, exp_of_poly_dydt)
                  ]
 
     for meth, tol in methods:
-        for residual, exact in functions:
+        for residual, exact, dydt in functions:
+
+            # If we can, then put the dydt function name into the dict,
+            # most methods shouldn't need this.
+            try:
+                meth['dydt_func'] = dydt
+            except TypeError:
+                pass
+
             yield check_problem, meth, residual, exact, tol
 
 
