@@ -79,7 +79,7 @@ def _timestep_scheme_factory(method):
         return bdf2_residual, None, par(higher_order_start, 2)
 
     elif label == 'bdf2 mp':
-        adaptor = par(time_adaptor,
+        adaptor = par(general_time_adaptor,
                       lte_calculator=bdf2_mp_lte_estimate,
                       method_order=2)
         return (bdf2_residual, adaptor, par(higher_order_start, 3))
@@ -102,7 +102,7 @@ def _timestep_scheme_factory(method):
                                   par(my_interpolate, n_interp=n_start,
                                       use_y_np1_in_interp=use_y_np1_in_interp))
 
-        adaptor = par(time_adaptor,
+        adaptor = par(general_time_adaptor,
                       lte_calculator=midpoint_ab_lte_estimate,
                       method_order=2,
                       ab_start_point=ab_start,
@@ -115,7 +115,7 @@ def _timestep_scheme_factory(method):
     elif label == 'midpoint ebdf3':
         dydt_func = _method_dict.get('dydt_func', None)
         lte_est = par(ebdf3_lte_estimate, dydt_func=dydt_func)
-        adaptor = par(time_adaptor,
+        adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
         return midpoint_residual, adaptor, par(higher_order_start, 4)
@@ -130,7 +130,7 @@ def _timestep_scheme_factory(method):
 
         dydt_func = _method_dict.get('dydt_func')
 
-        adaptor = par(time_adaptor,
+        adaptor = par(general_time_adaptor,
                       lte_calculator=tr_ab_lte_estimate,
                       dydt_func=dydt_func,
                       method_order=2)
@@ -608,35 +608,36 @@ def scale_timestep(dt, target_error, error_norm, order,
     allowable bounds.
     """
 
-    # Calculate the scaling factor
+    # Calculate the scaling factor and the candidate for next step size.
     scaling_factor = scaling_function(target_error, error_norm, order)
+    new_dt = scaling_factor * dt
 
     # If the error is too bad (i.e. scaling factor too small) reject the
     # step, unless we are already dealing with a rejected step;
     if scaling_factor < MIN_ALLOWED_DT_SCALING_FACTOR \
             and not scaling_function is failed_timestep_scaling:
-        raise FailedTimestepError(scaling_factor * dt)
+        raise FailedTimestepError(new_dt)
 
     # or if the scaling factor is really large just use the max scaling.
     elif scaling_factor > MAX_ALLOWED_DT_SCALING_FACTOR:
         scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
 
     # If the timestep would get too big then return the max time step;
-    if scaling_factor * dt > MAX_ALLOWED_TIMESTEP:
+    if new_dt > MAX_ALLOWED_TIMESTEP:
         return MAX_ALLOWED_TIMESTEP
 
     # or if the timestep would become too small then fail;
-    elif scaling_factor * dt < MIN_ALLOWED_TIMESTEP:
-        error = "Tried to reduce dt to " + str(scaling_factor * dt) +\
+    elif new_dt < MIN_ALLOWED_TIMESTEP:
+        error = "Tried to reduce dt to " + str(new_dt) +\
             " which is less than the minimum of " + str(MIN_ALLOWED_TIMESTEP)
         raise ConvergenceFailure(error)
 
     # otherwise scale the timestep normally.
     else:
-        return scaling_factor * dt
+        return new_dt
 
 
-def time_adaptor(ts, ys, target_error, method_order, lte_calculator, **kwargs):
+def general_time_adaptor(ts, ys, target_error, method_order, lte_calculator, **kwargs):
     """General base function for time adaptivity function.
 
     Partially evaluate with a method order and an lte_calculator to create
@@ -1013,7 +1014,7 @@ def test_bad_timestep_handling():
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
-    adaptor = par(time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=2)
+    adaptor = par(general_time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=2)
 
     ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
                      bdf2_residual, tol, adaptor)
