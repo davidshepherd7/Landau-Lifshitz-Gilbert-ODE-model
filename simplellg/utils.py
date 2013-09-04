@@ -72,9 +72,11 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
     return results_iterator
 
 
-def partial_lists(l, start=0):
+def partial_lists(l, min_list_length=1):
     """Given a list l return a list of "partial lists" (probably not the
-    right term...). "start" specifies a minimum list length.
+    right term...).
+
+    Optionally specify a minimum list length.
 
     ie.
 
@@ -82,8 +84,8 @@ def partial_lists(l, start=0):
 
     partial_lists(l) = [[0], [0, 1], [0, 1, 2], [0, 1, 2, 3]]
     """
-
-    return [l[:i] for i in range(start, len(l)+1)]
+    all_lists = [l[:i] for i in range(0, len(l)+1)]
+    return filter(lambda x: len(x) >= min_list_length, all_lists)
 
 
 def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-writeup/images"):
@@ -117,6 +119,22 @@ def memoize(f):
             return ret
     return memodict(f)
 
+
+def latex_escape(s):
+    """Escape all characters that latex will cry about.
+    """
+    s = s.replace(r'{', r'\{')
+    s = s.replace(r'}', r'\}')
+    s = s.replace(r'&', r'\&')
+    s = s.replace(r'%', r'\%')
+    s = s.replace(r'$', r'\$')
+    s = s.replace(r'#', r'\#')
+    s = s.replace(r'_', r'\_')
+    s = s.replace(r'^', r'\^{}')
+
+    # Can't handle backslashes... ?
+
+    return s
 
 
 # Testing helpers
@@ -152,6 +170,7 @@ def assert_almost_zero(a, tol=1e-9):
 
 
 def assert_list_almost_equal(list_a, list_b, tol=1e-9):
+    assert(len(list(list_a)) == len(list(list_b)))
     for a, b in zip(list_a, list_b):
         assert(abs(a - b) < tol)
 
@@ -353,7 +372,7 @@ def relative_error(exact, estimate):
 
 
 def dts_from_ts(ts):
-    return list(it.imap(op.sub, ts[1:], ts))
+    return list(map(op.sub, ts[1:], ts[:-1]))
 
 ts2dts = dts_from_ts
 
@@ -431,7 +450,7 @@ def test_parallel_sweep():
 
     parallel_result = list(parallel_parameter_sweep(example_f, [xs, ys]))
     serial_result = list(parallel_parameter_sweep(example_f, [xs, ys], True))
-    exact_result = it.starmap(example_f, it.product(xs, ys))
+    exact_result = list(it.starmap(example_f, it.product(xs, ys)))
 
     # Use sets for the comparison because the parallel computation destroys
     # any ordering we had before (and sets order their elements).
