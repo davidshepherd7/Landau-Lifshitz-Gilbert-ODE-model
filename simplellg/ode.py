@@ -118,7 +118,7 @@ def _timestep_scheme_factory(method):
         adaptor = par(time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 3)
+        return midpoint_residual, adaptor, par(higher_order_start, 4)
 
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
@@ -904,8 +904,7 @@ def ebdf3_lte_estimate(ts, ys, dydt_func=None):
 
     # Use BDF approximation to dyn if no function given
     if dydt_func is None:
-        assert(0)
-        dyn = bdf3_dydt(ts, ys)
+        dyn = bdf3_dydt(ts[:-1], ys[:-1])
     else:
         dyn = dydt_func(ts[-2], ys[-2])
 
@@ -1149,6 +1148,7 @@ def test_adaptive_dt():
     methods = [('bdf2 mp', 1e-4),
                # ('midpoint fe ab', 1e-4),
                # ('midpoint ab', 1e-4),
+               ('midpoint ebdf3', 1e-5), # test with and without explicit f
                ({'label':'midpoint ebdf3'}, 1e-5),
                ({'label':'tr ab'}, 1e-4),
                ]
