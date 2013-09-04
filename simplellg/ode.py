@@ -397,16 +397,7 @@ def ebdf3_step(ts, ys, dyn):
     """Calculate one step of "explicitBDF3", i.e. the third order analogue
     of explicit midpoint rule.
 
-    Derived using the following commands in maple:
-
-     f := dyn = (ynp1 - yn)/dtn - (dtn/(dtn + dtnm1))*((ynp1 - yn)/dtn - (yn - ynm1)/dtnm1) - ((dtn*dtnm1)/(dtn + dtnm1 + dtnm2)) * ((((ynp1 - yn)/dtn - (yn - ynm1)/dtnm1)/(dtn + dtnm1)) - ((yn - ynm1)/dtnm1 - (ynm1 - ynm2)/dtnm2)/(dtnm1 + dtnm2));
-    lprint(collect(solve(f, ynp1), [dyn, yn, ynp1, ynm1, ynm2]));
-
-    Could probably do the same thing using sympy actually.
-
-
-    See notes 28/8/13 for where this comes from (also Hairer et. al. 1991
-    pgs 364,400, but it's fairly tricky to work out).
+    Code is generated using sym-bdf3.py.
     """
 
     dtn = ts[-1] - ts[-2]
@@ -417,14 +408,7 @@ def ebdf3_step(ts, ys, dyn):
     ynm1 = ys[-3]
     ynm2 = ys[-4]
 
-    # Split into separate terms for easier debugging
-    a = ((dtn**3*dtnm1**2*dtnm2 + dtn**3*dtnm1*dtnm2**2 + 2*dtn**2*dtnm1**3*dtnm2 + 3*dtn**2*dtnm1**2*dtnm2**2 + dtn **2*dtnm1*dtnm2**3 + dtn*dtnm1**4*dtnm2 + 2*dtn*dtnm1**3*dtnm2**2 + dtn*dtnm1**2*dtnm2**3)/dtnm1**2/ dtnm2/(dtnm1 + dtnm2)**2*dyn)
-
-    b = (-2*dtn**3*dtnm1*dtnm2-dtn**3*dtnm2**2-3*dtn**2*dtnm1**2*dtnm2-3*dtn** 2*dtnm1*dtnm2**2-dtn**2*dtnm2**3+dtnm1**4*dtnm2+2*dtnm1**3*dtnm2**2+dtnm1**2*dtnm2**3)/dtnm1**2/ dtnm2/(dtnm1+dtnm2)**2*yn
-    c = (dtn**3*dtnm1**2+2*dtn**3*dtnm1*dtnm2+dtn**3*dtnm2**2+dtn**2*dtnm1**3+3* dtn**2*dtnm1**2*dtnm2+3*dtn**2*dtnm1*dtnm2**2+dtn**2*dtnm2**3)/dtnm1**2/dtnm2/(dtnm1+dtnm2)**2* ynm1
-    d = (-dtn**3*dtnm1**2-dtn**2*dtnm1**3)/dtnm1**2/dtnm2/(dtnm1+dtnm2)**2*ynm2
-
-    return a + b + c + d
+    return -(dyn*(-dtn**3*dtnm1**2*dtnm2 - dtn**3*dtnm1*dtnm2**2 - 2*dtn**2*dtnm1**3*dtnm2 - 3*dtn**2*dtnm1**2*dtnm2**2 - dtn**2*dtnm1*dtnm2**3 - dtn*dtnm1**4*dtnm2 - 2*dtn*dtnm1**3*dtnm2**2 - dtn*dtnm1**2*dtnm2**3) + yn*(2*dtn**3*dtnm1*dtnm2 + dtn**3*dtnm2**2 + 3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + dtn**2*dtnm2**3 - dtnm1**4*dtnm2 - 2*dtnm1**3*dtnm2**2 - dtnm1**2*dtnm2**3) + ynm1*(-dtn**3*dtnm1**2 - 2*dtn**3*dtnm1*dtnm2 - dtn**3*dtnm2**2 - dtn**2*dtnm1**3 - 3*dtn**2*dtnm1**2*dtnm2 - 3*dtn**2*dtnm1*dtnm2**2 - dtn**2*dtnm2**3) + ynm2*(dtn**3*dtnm1**2 + dtn**2*dtnm1**3))/(dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)
 
 
 def midpoint_residual(base_residual, ts, ys):
@@ -484,6 +468,45 @@ def bdf2_dydt(ts, ys):
             + (dt_n / ((dt_n + dt_nm1) * dt_nm1)) * y_nm1)
 
     return dydt
+
+
+def bdf3_dydt(ts, ys):
+    """Get dydt at time ts[-1] to O(dt^3).
+
+    Code is generated using sym-bdf3.py.
+    """
+
+    dtn = ts[-1] - ts[-2]
+    dtnm1 = ts[-2] - ts[-3]
+    dtnm2 = ts[-3] - ts[-4]
+
+    ynp1 = ys[-1]
+    yn = ys[-2]
+    ynm1 = ys[-3]
+    ynm2 = ys[-4]
+
+    return dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
+
+
+def bdf4_dydt(ts, ys):
+    """Get dydt at time ts[-1] using bdf4 approximation.
+
+    Code is generated using sym-bdf3.py.
+    """
+
+    dtn = ts[-1] - ts[-2]
+    dtnm1 = ts[-2] - ts[-3]
+    dtnm2 = ts[-3] - ts[-4]
+    dtnm3 = ts[-4] - ts[-5]
+
+    ynp1 = ys[-1]
+    yn = ys[-2]
+    ynm1 = ys[-3]
+    ynm2 = ys[-4]
+    ynm3 = ys[-5]
+
+
+    return dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(dtn + dtnm1)*((-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) - (-(-(ynm2 - ynm3)/dtnm3 + (ynm1 - ynm2)/dtnm2)/(dtnm2 + dtnm3) + (-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2))/(dtnm1 + dtnm2 + dtnm3))*(dtn + dtnm1 + dtnm2)/(dtn + dtnm1 + dtnm2 + dtnm3) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
 
 
 # Assumption: we never actually undo a timestep (otherwise dys will become
@@ -1033,6 +1056,39 @@ def test_ab2():
     # plt.show()
 
     utils.assert_almost_equal(ys[-1], exp(ts[-1]), 1e-5)
+
+
+def test_dydt_calcs():
+
+    def check_dydt_calcs(dydt_calculator, order, dt, dydt_exact, y_exact):
+        """Check that derivative approximations are roughly as accurate as
+        expected for a few functions.
+        """
+
+        ts = sp.arange(0, 0.5, dt)
+        exact_ys = map(y_exact, ts)
+        exact_dys = map(dydt_exact, ts, exact_ys)
+
+        est_dys = map(dydt_calculator, utils.partial_lists(ts, 5),
+                      utils.partial_lists(exact_ys, 5))
+
+        utils.assert_list_almost_equal(est_dys, exact_dys[4:], 10*(dt**order))
+
+    fs = [(poly_dydt, poly_exact),
+          (exp_dydt, exp_exact),
+          (exp_of_poly_dydt, exp_of_poly_exact),
+          ]
+
+    dydt_calculators = [(bdf2_dydt, 2),
+                        (bdf3_dydt, 3),
+                        (midpoint_dydt, 1),
+                        ]
+    dts = [0.1, 0.01, 0.001]
+
+    for dt in dts:
+        for dydt_exact, y_exact in fs:
+            for dydt_calculator, order in dydt_calculators:
+                yield check_dydt_calcs, dydt_calculator, order, dt, dydt_exact, y_exact
 
 
 def test_exp_timesteppers():
