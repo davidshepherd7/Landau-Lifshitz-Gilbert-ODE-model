@@ -1,17 +1,15 @@
 
 import sympy
+import sys
 from sympy import Rational as sRat
 from operator import mul
-import sys
-
-
 
 # A set of functions for symbolically calculating bdf forumlas.
 
 
 # Define some (global) symbols to use
 dts = sympy.var('Delta:9', real=True)
-dys = sympy.var('Dy:2', real=True)
+dys = sympy.var('Dy:9', real=True)
 ys = sympy.var('y:9', real=True)
 
 # subs i => step n+1-i (with Delta_{n+1} = t_{n+1} - t_n)
@@ -88,22 +86,57 @@ def accumulate(iterable):
 
 def main():
 
-    for order in range(1,4):
-        print "implicit BDF", order, "is given by:"
-        print sympy.pretty(sympy.Eq(Dy0, bdf_method(order, True)))
+    print "\n\n code for eBDF3 step:"
+    print my_bdf_code_gen(3, False, True)
 
+    print "\n\n code for iBDF3 dydt approximation:"
+    print my_bdf_code_gen(3, True, False)
 
+    print "\n\n code for iBDF4 dydt approximation:"
+    print my_bdf_code_gen(4, True, False)
 
-    for order in range(1,4):
-        print "explicit BDF", order, "is given by:"
-        print sympy.pretty(sympy.Eq(Dy1, bdf_method(order, False)))
+def my_bdf_code_gen(order, implicit, solve_for_ynp1):
 
+    dydt_expr = bdf_method(order, implicit)
 
-    print "\n\n"
-    print r"notation:"
-    print r"subscript i => step n+1-i"
-    print r"Delta_i : t_{n+1-1} - t_{n-i}"
-    print r"Dy_i: \frac{\partial y(t_{n+1-i}, y_{n+1-i})}{\partial t}"
+    if solve_for_ynp1:
+        # Set equal to dydt at either n+1 or n th step, then solve for y_{n+1}
+        if implicit:
+            bdf_method_solutions = sympy.solve(sympy.Eq(dydt_expr, Dy0), y0)
+        else:
+            bdf_method_solutions = sympy.solve(sympy.Eq(dydt_expr, Dy1), y0)
+
+        # Check there's one solution only
+        assert(len(bdf_method_solutions) == 1)
+
+        # Convert it to a string
+        bdf_method_code = str(bdf_method_solutions[0].collect(ys+dys))
+
+    else:
+        bdf_method_code = str(dydt_expr.collect(ys+dys))
+
+    # Replace the sympy variables with variable names consistent with my
+    # code in ode.py
+    sympy_to_odepy_code_string_replacements = \
+      {'Delta0':'dtn', 'Delta1':'dtnm1', 'Delta2':'dtnm2', 'Delta3':'dtnm3',
+       'Dy0':'dynp1', 'Dy1':'dyn',
+       'y0':'ynp1', 'y1':'yn', 'y2':'ynm1', 'y3':'ynm2', 'y4':'ynm3'}
+
+    # This is a rubbish way to do mass replace (many passes through the
+    # text, any overlapping replaces will cause crazy behaviour) but it's
+    # good enough for our purposes.
+    for key, val in sympy_to_odepy_code_string_replacements.iteritems():
+        bdf_method_code = bdf_method_code.replace(key, val)
+
+    # Check that none of the replacements contain things that will be
+    # replaced by other replacement operations. Maybe slow but good to test
+    # just in case...
+    for _, replacement in sympy_to_odepy_code_string_replacements.iteritems():
+        for key, _ in sympy_to_odepy_code_string_replacements.iteritems():
+            assert(replacement not in key)
+
+    return bdf_method_code
+
 
 if __name__ == '__main__':
     sys.exit(main())
