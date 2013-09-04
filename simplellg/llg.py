@@ -60,6 +60,7 @@ import simplellg.ode as ode
 
 #     return residual
 
+
 def heff(magnetic_parameters, t, m_cart):
     Hk_vec = magnetic_parameters.Hk_vec(m_cart)
     h_eff = magnetic_parameters.Hvec(t) + Hk_vec # - ((1.0/3)*sp.array(m_cart))
@@ -95,6 +96,17 @@ def llg_cartesian_dfdm(magnetic_parameters, t, m_cart, dmdt_cart):
     return dfdm
 
 
+def ll_dmdt(magnetic_parameters, t, m):
+    alpha = magnetic_parameters.alpha
+    h_eff = heff(magnetic_parameters, t, m)
+
+    return -1/(1 + alpha**2) *(sp.cross(m, h_eff) + alpha*sp.cross(m, sp.cross(m, h_eff)))
+
+
+def ll_residual(magnetic_parameters, t, m, dmdt):
+    return dmdt - ll_dmdt(magnetic_parameters, t, m)
+
+
 # def llg_constrained_cartesian_residual(magnetic_parameters, t, m_cart,
 #                                        dmdt_cart):
 
@@ -121,7 +133,7 @@ def test_llg_residuals():
     # m0_constrained = list(m0_cart) + [None]  # ??ds
 
     residuals = [(llg_cartesian_residual, m0_cart),
-                 #(llg_spherical_residual, m0_sph),
+                 (ll_residual, m0_cart),
                  # (llg_constrained_cartesian_residual, m0_constrained),
                  ]
 
