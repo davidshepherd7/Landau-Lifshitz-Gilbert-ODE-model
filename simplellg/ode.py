@@ -86,6 +86,14 @@ def _timestep_scheme_factory(method):
                       method_order=2)
         return (bdf2_residual, adaptor, par(higher_order_start, 3))
 
+    elif label == 'bdf2 ebdf3':
+        dydt_func = _method_dict.get('dydt_func', None)
+        lte_est = par(ebdf3_lte_estimate, dydt_func=dydt_func)
+        adaptor = par(general_time_adaptor,
+                      lte_calculator=lte_est,
+                      method_order=2)
+        return (bdf2_residual, adaptor, par(higher_order_start, 4))
+
     elif label == 'bdf1':
         return bdf1_residual, None, None
 
