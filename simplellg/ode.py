@@ -14,6 +14,8 @@ import sys
 
 import simplellg.utils as utils
 
+import scipy.linalg
+
 # PARAMETERS
 MAX_ALLOWED_DT_SCALING_FACTOR = 3.0
 MIN_ALLOWED_DT_SCALING_FACTOR = 0.75
@@ -170,7 +172,8 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
     functions using _timestep_scheme_factory(..), set up data storage and
     integrate the ODE using _odeint.
 
-    Any other arguments are just passed down to _odeint.
+    Any other arguments are just passed down to _odeint, which passes extra
+    args down to the newton solver.
     """
 
     # Select the method and adaptor
@@ -196,7 +199,7 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
 def _odeint(func, ys, ts, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
             initialisation_actions=None, actions_after_timestep=None,
-            newton_tol=1e-8):
+            **kwargs):
     """Underlying function for odeint.
     """
 
@@ -218,11 +221,11 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
         try:
-            y_np1 = newton(residual, ys[-1], tol=newton_tol)
+            y_np1 = newton(residual, ys[-1], **kwargs)
         except sp.optimize.nonlin.NoConvergence:
             dt = scale_timestep(dt, None, None, None,
                                 scaling_function=failed_timestep_scaling)
-            sys.stderr.write("Failed to converge, reducing time step.")
+            sys.stderr.write("Failed to converge, reducing time step.\n")
             continue
 
         # Execute any post-step actions requested (e.g. renormalisation,
@@ -244,7 +247,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
             # timestep, instead repeat it with the new step size.
             except FailedTimestepError, exception_data:
                 sys.stderr.write('Rejected time step\n')
-                dt= exception_data.new_dt
+                dt = exception_data.new_dt
                 continue
 
         # Update results storage (don't do this earlier in case the time
@@ -259,7 +262,8 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
 # ============================================================
 
 
-def newton(residual, x0, jacobian=None, tol=1e-8, solve_function=None):
+def newton(residual, x0, jacobian=None, newton_tol=1e-8, solve_function=None,
+           jacobian_fd_eps=1e-10, max_iter=20):
     """Find the minimum of the residual function using Newton's method.
 
     Optionally specify a Jacobian, a tolerance and/or a function to solve
@@ -268,12 +272,10 @@ def newton(residual, x0, jacobian=None, tol=1e-8, solve_function=None):
     If no Jacobian is given the Jacobian is finite differenced.
     If no solve function is given then sp.linalg.solve is used.
 
-    Max Newton iterations is 20.
-
     Norm for measuring residual is max(abs(..)).
     """
     if jacobian is None:
-        jacobian = par(finite_diff_jacobian, residual)
+        jacobian = par(finite_diff_jacobian, residual, eps=jacobian_fd_eps)
 
     if solve_function is None:
         solve_function = sp.linalg.solve
@@ -284,32 +286,37 @@ def newton(residual, x0, jacobian=None, tol=1e-8, solve_function=None):
         if len(b) == 1:
             return b/A[0][0]
         else:
-            return solve_function(A, b)
+            try:
+                return solve_function(A, b)
+            except scipy.linalg.LinAlgError:
+                print "\n", A, b, "\n"
+                raise
 
     # Call the real Newton solve function
-    return _newton(residual, x0, jacobian, tol, wrapped_solve, 0)
+    return _newton(residual, x0, jacobian, newton_tol, wrapped_solve, max_iter)
 
 
-def _newton(residual, x0, jacobian, tol, solve_function, count):
+def _newton(residual, x0, jacobian, newton_tol, solve_function, max_iter):
     """Core function of newton(...)."""
 
-    if count > 20:
+    if max_iter <= 0:
         raise sp.optimize.nonlin.NoConvergence
 
     r = residual(x0)
 
-    # If max entry is below tol then return
-    if sp.amax(abs(r)) < tol:
+    # If max entry is below newton_tol then return
+    if sp.amax(abs(r)) < newton_tol:
         return x0
 
     # Otherwise reduce residual using Newtons method + recurse
     else:
         J = jacobian(x0)
         dx = solve_function(J, r)
-        return _newton(residual, x0 - dx, jacobian, tol, solve_function, count+1)
+        return _newton(residual, x0 - dx, jacobian, newton_tol,
+                       solve_function, max_iter - 1)
 
 
-def finite_diff_jacobian(residual, x, eps=1e-10):
+def finite_diff_jacobian(residual, x, eps):
     """Calculate the matrix of derivatives of the residual w.r.t. input
     values by finite differencing.
     """
