@@ -176,8 +176,34 @@ def assert_list_almost_equal(list_a, list_b, tol=1e-9):
 
 
 def assert_list_almost_zero(values, tol=1e-9):
-    for a in values:
-        assert(abs(a) < tol)
+    for x in values:
+        assert abs(x) < tol
+
+
+def assert_sym_eq(a, b):
+    """Compare symbolic expressions. Note that the simplification algorithm
+    is not completely robust: might give false negatives (but never false
+    positives).
+
+    Try adding extra simplifications if needed, e.g. add .trigsimplify() to
+    the end of my_simp.
+    """
+
+    def my_simp(expr):
+        # Can't .expand() ints, so catch the zero case separately.
+        try:
+            return expr.expand().simplify()
+        except AttributeError:
+            return expr
+
+    print
+    print sympy.pretty(my_simp(a))
+    print "equals"
+    print sympy.pretty(my_simp(b))
+    print
+
+    # Try to simplify the difference to zero
+    assert (my_simp(a - b) == 0)
 
 
 # Spherical polar coordinates asserts
