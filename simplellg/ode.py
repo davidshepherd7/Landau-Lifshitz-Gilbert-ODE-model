@@ -12,7 +12,7 @@ import copy
 from scipy.interpolate import krogh_interpolate
 import sys
 
-import simplellg.utils as utils
+import utils as utils
 
 import scipy.linalg
 

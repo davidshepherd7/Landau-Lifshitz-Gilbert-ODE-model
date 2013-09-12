@@ -8,7 +8,7 @@ import scipy as sp
 import matplotlib.pyplot as plt
 import functools as ft
 
-import simplellg.utils as utils
+import utils as utils
 
 
 def calculate_switching_time(magnetic_parameters, p_start, p_now):

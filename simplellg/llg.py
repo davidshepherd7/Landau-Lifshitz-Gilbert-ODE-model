@@ -3,8 +3,8 @@
 from __future__ import division
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
-import simplellg.utils as utils
-import simplellg.ode as ode
+import utils as utils
+import ode as ode
 
 
 # def absmod2pi(a):
@@ -119,7 +119,7 @@ def ll_residual(magnetic_parameters, t, m, dmdt):
 # Testing
 # ============================================================
 
-import simplellg.mallinson as mlsn
+import mallinson as mlsn
 import functools as ft
 import matplotlib.pyplot as plt
 

@@ -7,8 +7,9 @@ from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 import itertools as it
 
-import simplellg.utils as utils
-from simplellg.llg import heff
+import simplellg
+import utils as utils
+from llg import heff
 
 def llg_state_energy(sph, mag_params, t=None):
     """Assuming unit volume, spatially constant, spherical particle.
