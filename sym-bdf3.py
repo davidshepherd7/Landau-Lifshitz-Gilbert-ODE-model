@@ -1,16 +1,25 @@
 
 import sympy
+import scipy.misc
 import sys
+import itertools as it
+
+
 from sympy import Rational as sRat
 from operator import mul
+from functools import partial as par
+
+import simplellg
+from simplellg import utils as utils
+
 
 # A set of functions for symbolically calculating bdf forumlas.
 
 
 # Define some (global) symbols to use
-dts = sympy.var('Delta:9', real=True)
-dys = sympy.var('Dy:9', real=True)
-ys = sympy.var('y:9', real=True)
+dts = list(sympy.var('Delta:9', real=True))
+dys = list(sympy.var('Dy:9', real=True))
+ys = list(sympy.var('y:9', real=True))
 
 # subs i => step n+1-i (with Delta_{n+1} = t_{n+1} - t_n)
 
@@ -34,13 +43,26 @@ def divided_diff(order, ys, dts):
         return (ys[0] - ys[-1])/(dts[0])
 
 
-def bdf2_prefactor(order, implicit):
+def old_bdf_prefactor(order, implicit):
     """Calculate the non-divided difference part of the bdf approximation.
     For implicit this is the product term in (5.12) on page 400 of
     Hairer1991. For explicit it's more tricky and not given in any book
     that I've found, I derived it from expressions on pgs 400, 366 of
     Hairer1991.
     """
+
+    def accumulate(iterable):
+        """Return running totals (from python 3.2), i.e.
+
+        accumulate([1,2,3,4,5]) --> 1 3 6 10 15
+        """
+        it = iter(iterable)
+        total = next(it)
+        yield total
+        for element in it:
+            total = total + element
+            yield total
+
     assert(order >= 0)
 
     if order == 0:
@@ -49,77 +71,128 @@ def bdf2_prefactor(order, implicit):
         return 1
     else:
         if implicit:
-            return reduce(mul, accumulate(dts[0:order-1]), 1)
+            # dt0 * (dt0 + dt1) * (dt0 + dt1 + dt2) * ... (dt0 + dt1 + ... + dt_{order-1})
+            return _product(accumulate(dts[0:order-1]))
         else:
-            # the maths is messy here...
-            terms = [dts[0]] + list(accumulate(dts[1:order-1]))
-            return -1 * reduce(mul, terms, 1)
+            # the maths is messy here... Basically the same as above but
+            # with some different terms
+            terms = it.chain([dts[0]], accumulate(dts[1:order-1]))
+            return -1 * _product(terms)
 
 
-def bdf_method(order, implicit=True):
+def _steps_diff_to_list_of_dts(a, b, missing=None):
+    """Get t_a - t_b in terms of dts.
+
+    e.g.
+    a = 0, b = 2:
+    t_0 - t_2 = t_{n+1} - t_{n-1} = dt_{n+1} + dt_n = dts[0] + dts[1]
+
+    a = 2, b = 0:
+    t_2 - t_0 = - dts[0] - dts[1]
+    """
+    # if a and b are in the "wrong" order then it's just the negative of
+    # the sum with them in the "right" order.
+    if a > b:
+        return map(lambda x: -1*x, _steps_diff_to_list_of_dts(b, a, missing))
+
+    return dts[a:b]
+
+
+def _product(l):
+    """Return the product (i.e. all entrys multiplied together) of a list or iterator.
+    """
+    return reduce(mul, l, 1)
+
+
+def bdf_prefactor(order, derivative_point):
+    """Calculate the non-divided difference part of the bdf approximation
+    with the derivative known at any integer point. For implicit BDF the
+    known derivative is at n+1 (so derivative point = 0), others it is
+    further back in time (>0).
+    """
+    assert(order >= 0)
+    assert(derivative_point >= 0)
+
+    if order == 0:
+        return 0
+
+    terms = 0
+
+    # For each i in the summation (Note that for most i, for low derivative
+    # point the contribution is zero. It's possible to do fancy algebra to
+    # speed this up, but it's just not worth it!)
+    for i in range(0, order):
+        # Get a list of l values for which to calculate the product terms.
+        l_list = [l for l in range(0, order) if l != i]
+
+        # Calculate a list of product terms (in terms of dts).
+        c = map(lambda b: sum(_steps_diff_to_list_of_dts(derivative_point, b)),
+                l_list)
+
+        # Multiply together and add to total
+        terms = terms + _product(c)
+
+    return terms
+
+
+def bdf_method(order, derivative_point=0):
     """Calculate the bdf approximation for dydt. If implicit approximation
     is at t_{n+1}, otherwise it is at t_n.
     """
 
-    # Basically just a python implementation of equation (5.12) on page 400
-    # of Hairer1991. Calculate two lists of terms then multiply them
-    # together and sum up.
-    a = range(1, order+1)
-    prefactors = map(lambda n: bdf2_prefactor(n, implicit), a)
-    divided_diffs = map(lambda n: divided_diff(n, ys[:n+1], dts[:n]), a)
+    # Each term is just the appropriate order prefactor multiplied by a
+    # divided difference. Basically just a python implementation of
+    # equation (5.12) on page 400 of Hairer1991.
+    def single_term(n):
+        return bdf_prefactor(n, derivative_point) * divided_diff(n, ys[:n+1], dts[:n])
 
-    return sum([p*d for p, d in zip(prefactors, divided_diffs)])
-
-
-def accumulate(iterable):
-    """Return running totals (from python 3.2), i.e.
-
-    accumulate([1,2,3,4,5]) --> 1 3 6 10 15
-    """
-    it = iter(iterable)
-    total = next(it)
-    yield total
-    for element in it:
-        total = total + element
-        yield total
+    return sum(map(single_term, range(1, order+1)))
 
 
 def main():
 
-    print "\n\n code for eBDF3 step:"
-    print my_bdf_code_gen(3, False, True)
+    # print "\n\n code for eBDF3 step:"
+    # print my_bdf_code_gen(3, 1, False)
 
-    print "\n\n code for iBDF3 dydt approximation:"
-    print my_bdf_code_gen(3, True, False)
+    # print "\n\n code for iBDF3 dydt approximation:"
+    # print my_bdf_code_gen(3, 0, True)
 
-    print "\n\n code for iBDF4 dydt approximation:"
-    print my_bdf_code_gen(4, True, False)
+    # print "\n\n code for iBDF4 dydt approximation:"
+    # print my_bdf_code_gen(4, 0, True)
 
-def my_bdf_code_gen(order, implicit, solve_for_ynp1):
+    print "\n\n code for eBDF3 step w/ derivative at n-1:"
+    print my_bdf_code_gen(3, 2, True)
 
-    dydt_expr = bdf_method(order, implicit)
+    # print sympy.pretty(sympy.Eq(dys[2], bdf_method(1, 2)))
+    # print sympy.pretty(sympy.Eq(dys[2], bdf_method(2, 2)))
+    # print sympy.pretty(sympy.Eq(dys[2], bdf_method(3, 2)))
+
+
+
+
+def my_bdf_code_gen(order, derivative_point, solve_for_ynp1):
+
+    dydt_expr = bdf_method(order, derivative_point)
 
     if solve_for_ynp1:
-        # Set equal to dydt at either n+1 or n th step, then solve for y_{n+1}
-        if implicit:
-            bdf_method_solutions = sympy.solve(sympy.Eq(dydt_expr, Dy0), y0)
-        else:
-            bdf_method_solutions = sympy.solve(sympy.Eq(dydt_expr, Dy1), y0)
+        # Set equal to dydt at derivative-point-th step, then solve for y_{n+1}
+        bdf_method_solutions = sympy.solve(sympy.Eq(dydt_expr,
+                                                    dys[derivative_point]), y0)
 
         # Check there's one solution only
         assert(len(bdf_method_solutions) == 1)
 
         # Convert it to a string
-        bdf_method_code = str(bdf_method_solutions[0].collect(ys+dys))
+        bdf_method_code = str(bdf_method_solutions[0].expand().collect(ys+dys))
 
     else:
-        bdf_method_code = str(dydt_expr.collect(ys+dys))
+        bdf_method_code = str(dydt_expr.expand().collect(ys+dys))
 
     # Replace the sympy variables with variable names consistent with my
     # code in ode.py
     sympy_to_odepy_code_string_replacements = \
       {'Delta0':'dtn', 'Delta1':'dtnm1', 'Delta2':'dtnm2', 'Delta3':'dtnm3',
-       'Dy0':'dynp1', 'Dy1':'dyn',
+       'Dy0':'dynp1', 'Dy1':'dyn', 'Dy2' : 'dynm1',
        'y0':'ynp1', 'y1':'yn', 'y2':'ynm1', 'y3':'ynm2', 'y4':'ynm3'}
 
     # This is a rubbish way to do mass replace (many passes through the
@@ -155,25 +228,32 @@ def assert_sym_eq(a, b):
     """
 
     def my_simp(expr):
-        return expr.expand().simplify()
+        # Can't .expand() ints, so catch the zero case separately.
+        try:
+            return expr.expand().simplify()
+        except AttributeError:
+            return expr
 
+    print
     print sympy.pretty(my_simp(a))
+    print "equals"
     print sympy.pretty(my_simp(b))
+    print
 
     # Try to simplify the difference to zero
-    assert(my_simp(a - b) == 0)
+    assert (my_simp(a - b) == 0)
 
 
-def check_const_step(order, exact, implicit):
+def check_const_step(order, exact, derivative_point):
 
-    # Derive implicit bdf method
-    b = bdf_method(order, implicit)
+    # Derive bdf method
+    b = bdf_method(order, derivative_point)
 
     # Set all step sizes to be Delta0
     b_const_step = b.subs({k:Delta0 for k in dts})
 
     # Compare with exact
-    assert_sym_eq(b_const_step, exact)
+    assert_sym_eq(exact, b_const_step)
 
 
 def test_const_step_implicit():
@@ -189,7 +269,7 @@ def test_const_step_implicit():
     orders = [1, 2, 3, 4]
 
     for order, exact in zip(orders, exacts):
-        yield check_const_step, order, exact, True
+        yield check_const_step, order, exact, 0
 
 
 def test_const_step_explicit():
@@ -201,13 +281,14 @@ def test_const_step_explicit():
     IMR_bdf_form = a[0].subs({k:Delta0 for k in dts})
 
 
-    orders = [2, 3]
-    exacts = [IMR_bdf_form,
+    orders = [1, 2, 3]
+    exacts = [(y0 - y1)/Delta0,
+              IMR_bdf_form,
               (sRat(1,3)*y0 + sRat(1,2)*y1 - y2 + sRat(1,6)*y3)/Delta0 #Hairer pg 364
               ]
 
     for order, exact in zip(orders, exacts):
-        yield check_const_step, order, exact, False
+        yield check_const_step, order, exact, 1
 
 
 def test_variable_step_implicit_bdf2():
@@ -222,7 +303,7 @@ def test_variable_step_implicit_bdf2():
     exact = exact[0]
 
     # Get the method using my code
-    mine = bdf_method(2, True)
+    mine = bdf_method(2, 0)
 
     assert_sym_eq(exact, mine)
 
@@ -238,6 +319,52 @@ def test_variable_step_explicit_bdf2():
     exact = exact[0]
 
     # Get the method using my code
-    mine = bdf_method(2, False)
+    mine = bdf_method(2, 1)
 
     assert_sym_eq(exact, mine)
+
+
+def test_list_dts():
+
+    # Check we have a list (not a tuple like before...)
+    assert list(_steps_diff_to_list_of_dts(2, 0)) == _steps_diff_to_list_of_dts(2, 0)
+    assert list(_steps_diff_to_list_of_dts(0, 2)) == _steps_diff_to_list_of_dts(0, 2)
+
+    map(assert_sym_eq, _steps_diff_to_list_of_dts(0, 2), [dts[0], dts[1]])
+    map(assert_sym_eq, _steps_diff_to_list_of_dts(2, 0), [-dts[0], -dts[1]])
+
+    assert _steps_diff_to_list_of_dts(2, 2) == []
+
+
+def test_product():
+    assert _product([]) == 1
+    assert _product(xrange(1,11)) == scipy.misc.factorial(10, True)
+    assert _product(xrange(0,101)) == 0
+
+
+def test_generalised_bdf_prefactor():
+    def check(order, implicit):
+        old = old_bdf_prefactor(order, implicit)
+        if implicit:
+            new = bdf_prefactor(order, 0)
+        else:
+            new = bdf_prefactor(order, 1)
+        assert_sym_eq(old, new)
+
+    orders = [0, 1, 2, 3, 4]
+    for order in orders:
+        for implicit in [True, False]:
+            yield check, order, implicit
+
+    def check_new_ones(order, real_value):
+        calculated = bdf_prefactor(order, 2)
+        assert_sym_eq(real_value, calculated)
+
+    real_values = [(0, 0),
+                   (1, 1),
+                   (2, (-dts[0] - dts[1]) - dts[1]),
+                   (3, (-dts[0] - dts[1])*-dts[1]),
+                   (4, (-dts[0] - dts[1])*-dts[1]*dts[2]),
+                   ]
+    for order, real_value in real_values:
+        yield check_new_ones, order, real_value
