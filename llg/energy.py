@@ -2,14 +2,16 @@
 """
 
 from __future__ import division
+from __future__ import absolute_import
+
 import operator as op
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 import itertools as it
 
-import simplellg
-import utils as utils
-from llg import heff
+import simpleode.core.utils as utils
+import simpleode.llg.llg as llg
+from simpleode.llg.llg import heff
 
 def llg_state_energy(sph, mag_params, t=None):
     """Assuming unit volume, spatially constant, spherical particle.
@@ -227,47 +229,3 @@ def recompute_alpha_list(m_sph_list, t_list, mag_params,
     alpha_list = it.imap(alpha_func, m_sph_list, m_sph_list[1:],
                          t_list, t_list[1:], it.repeat(mag_params))
     return alpha_list
-
-
-    #
-# Testing
-# ============================================================
-def test_zeeman():
-    """Test zeeman energy for some simple cases.
-    """
-    H_tests = [lambda t: sp.array([0, 0, 10]),
-               lambda t: sp.array([-sqrt(2)/2, -sqrt(2)/2, 0.0]),
-               lambda t: sp.array([0, 1, 0]),
-               lambda t: sp.array([0.01, 0.0, 0.01]),
-               ]
-
-    m_tests = [(1.0, 0.0, 0.0),
-               utils.cart2sph((sqrt(2)/2, sqrt(2)/2, 0.0)),
-               (1, 0, 1),
-               (0.0, 100.0, 0.0),
-               ]
-
-    answers = [lambda mP: -1 * mP.mu0 * mP.Ms * mP.H(None),
-               lambda mP: mP.mu0 * mP.Ms * mP.H(None),
-               lambda _:0.0,
-               lambda _:0.0,
-               ]
-
-    for m, H, ans in zip(m_tests, H_tests, answers):
-        yield check_zeeman, m, H, ans
-
-
-def check_zeeman(m, H, ans):
-    """Helper function for test_zeeman."""
-    mag_params = utils.MagParameters()
-    mag_params.Hvec = H
-    utils.assert_almost_equal(zeeman_energy(m, mag_params),
-                              ans(mag_params))
-
-
-# See also mallinson.py: test_self_consistency for checks on alpha
-# recomputation using Mallinson's exact solution.
-
-# To test for applied fields we would need to do real time integration,
-# which is a bit too large of a dependancy to have in a unit test, so do it
-# somewhere else.

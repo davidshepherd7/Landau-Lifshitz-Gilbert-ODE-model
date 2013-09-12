@@ -1,4 +1,6 @@
 
+from __future__ import absolute_import
+
 import sympy
 import scipy.misc
 import sys
@@ -9,8 +11,8 @@ from sympy import Rational as sRat
 from operator import mul
 from functools import partial as par
 
-import simplellg
-from simplellg import utils as utils
+import simpleode.core
+from simpleode.core import utils as utils
 
 
 # A set of functions for symbolically calculating bdf forumlas.

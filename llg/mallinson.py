@@ -3,12 +3,14 @@
 """
 
 from __future__ import division
+from __future__ import absolute_import
+
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 import matplotlib.pyplot as plt
 import functools as ft
 
-import utils as utils
+import simpleode.core.utils as utils
 
 
 def calculate_switching_time(magnetic_parameters, p_start, p_now):
@@ -135,96 +137,3 @@ def plot_vs_exact(magnetic_parameters, ts, ms):
              pols, exact_azis)
 
     plt.show()
-
-
-# Test this file's code
-# ============================================================
-import unittest
-import energy
-
-
-class MallinsonSolverCheckerBase():
-    """Base class to define the test functions but not actually run them.
-    """
-
-    def base_init(self, magParameters=None, steps=1000,
-                  p_start=pi/18):
-
-        if magParameters is None:
-            self.mag_params = utils.MagParameters()
-        else:
-            self.mag_params = magParameters
-
-        (self.sphs, self.times) = generate_dynamics(
-            self.mag_params, steps=steps)
-
-        def f(sph): energy.llg_state_energy(sph, self.mag_params)
-        self.energys = map(f, self.sphs)
-
-    # Monotonically increasing time
-    def test_increasing_time(self):
-        print(self.mag_params.Hvec)
-        for a, b in zip(self.times, self.times[1:]):
-            assert(b > a)
-
-    # Azimuthal is in correct range
-    def test_azimuthal_in_range(self):
-        for sph in self.sphs:
-            utils.assert_azi_in_range(sph)
-
-    # Monotonically decreasing azimuthal angle except for jumps at 2*pi.
-    def test_increasing_azimuthal(self):
-        for a, b in zip(self.sphs, self.sphs[1:]):
-            assert(a.azi > b.azi or
-                   (a.azi - 2*pi <= 0.0 and b.azi >= 0.0))
-
-    def test_damping_self_consistency(self):
-        a2s = energy.recompute_alpha_list(self.sphs, self.times,
-                                          self.mag_params)
-
-        # Check that we get the same values with the varying fields version
-        a3s = energy.recompute_alpha_list(self.sphs, self.times,
-                                          self.mag_params,
-                                          energy.recompute_alpha_varying_fields)
-        utils.assert_list_almost_equal( a2s, a3s, (1.1/len(self.times)))
-        # one of the examples doesn't quite pass with tol=1.0/len, so use
-        # 1.1
-
-        # Use 1/length as error estimate because it's proportional to dt
-        # and so proportional to the expected error
-        def check_alpha_ok(a2):
-            return abs(a2 - self.mag_params.alpha) < (1.0/len(self.times))
-        assert(all(map(check_alpha_ok, a2s)))
-
-    # This is an important test. If this works then it is very likely that
-    # the Mallinson calculator, the energy calculations and most of the
-    # utils (so far) are all working. So tag it as "core".
-    test_damping_self_consistency.core = True
-
-
-
-# Now run the tests with various intial settings (tests are inherited from
-# the base class.
-class TestMallinsonDefaults(MallinsonSolverCheckerBase, unittest.TestCase):
-    def setUp(self):
-        self.base_init() # steps=10000) ??ds
-
-
-class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
-    def setUp(self):
-        mag_params = utils.MagParameters()
-        mag_params.K1 = 0.6
-        self.base_init(mag_params)
-
-
-class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
-    def setUp(self):
-        mag_params = utils.MagParameters()
-        mag_params.alpha = 0.1
-        self.base_init(mag_params) # , steps=10000) ??ds
-
-
-class TestMallinsonStartAngle(MallinsonSolverCheckerBase,
-                              unittest.TestCase):
-    def setUp(self):
-        self.base_init(p_start=pi/2)

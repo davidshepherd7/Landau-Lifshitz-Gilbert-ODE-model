@@ -1,4 +1,4 @@
 .ropeproject
 .pep8diff
 experiments/
-simplellg/build
+core/build
