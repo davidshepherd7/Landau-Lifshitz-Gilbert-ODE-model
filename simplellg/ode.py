@@ -1066,13 +1066,22 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
 # Testing
 # ============================================================
 import matplotlib.pyplot as plt
-from example_residuals import *
+import example_residuals as er
 
 
-def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
+def check_problem(method, symfunc, tol=1e-4, tmax=2.0):
     """Helper function to run odeint with a specified method for a problem
     and check that the solution matches.
     """
+
+    residual, dydt, exact = er.triple_from_symfunc(symfunc)
+
+    # If we can, then put the dydt function name into the dict,
+    # most methods shouldn't need this.
+    try:
+        method['dydt_func'] = dydt
+    except TypeError:
+        pass
 
     ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
                     method=method, target_error=tol)
@@ -1096,13 +1105,15 @@ def test_bad_timestep_handling():
             temp.append(temp[-1] + v)
         return temp
 
+    residual, dydt, exact = er.triple_from_symfunc(er.exp3)
+
     dts = [1e-6, 1e-6, 1e-6, (1. - 0.01)*tmax]
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
-    initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
+    initial_ys = [sp.array(exact(t), ndmin=1) for t in initial_ts]
 
     adaptor = par(general_time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=2)
 
-    ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
+    ys, ts = _odeint(residual, initial_ys, initial_ts, dts[-1], tmax,
                      bdf2_residual, tol, adaptor)
 
     # plt.plot(ts,ys)
@@ -1111,7 +1122,7 @@ def test_bad_timestep_handling():
     # plt.show()
 
     overall_tol = len(ys) * tol * 2  # 2 is a fudge factor...
-    utils.assert_list_almost_equal(ys, map(exp3_exact, ts), overall_tol)
+    utils.assert_list_almost_equal(ys, map(exact, ts), overall_tol)
 
 
 def test_ab2():
@@ -1125,7 +1136,7 @@ def test_ab2():
 
     # Starting values
     ts = [0.0, 1e-6]
-    ys = map(exp, ts)
+    ys = map(sp.exp, ts)
     dts = [1e-6]
 
     while ts[-1] < tmax:
@@ -1141,29 +1152,67 @@ def test_ab2():
     # plt.plot(ts, ys, 'x', ts, map(exp, ts))
     # plt.show()
 
-    utils.assert_almost_equal(ys[-1], exp(ts[-1]), 1e-5)
+    utils.assert_almost_equal(ys[-1], sp.exp(ts[-1]), 1e-5)
+
+
+def test_explicit_stepper_orders():
+    """Check that explicit time steppers can get the appropriate monomial
+    for their order exactly right.
+    """
+
+    def check_explicit_stepper(method, order):
+
+        # Get exact solution etc. Use a polynomial which should be exact
+        # for this stepper.
+        ts = sp.arange(0, 5, 0.1)
+        exacts = map(lambda t: t**order, ts)
+        exact_dys = map(lambda t: order*(t**(order-1)), ts)
+
+        # Calculate ynp1 using stepper from exact previous values + compare
+        # with real value. Should be exact (to Newton error).
+        for i, t in enumerate(ts):
+            if i > 4:
+                result = method(ts[:i], exacts[:i], exact_dys[:i])
+                utils.assert_almost_equal(result, exacts[i-1])
+
+
+    # Wrapper functions to give a standard interface to some stepper functions
+    def modified_ab2_step(ts, ys, dys):
+        return ab2_step(ts[-1] - ts[-2], ys[-2], dys[-2],
+                        ts[-2] - ts[-3], dys[-3])
+    def modified_emr_step(ts, ys, dys):
+        return emr_step(ts[-1] - ts[-2], ys[-2], dys[-2],
+                        ts[-2] - ts[-3], ys[-3])
+
+    methods = [(modified_ab2_step, 2),
+               (modified_emr_step, 2),
+               (lambda ts, ys, dys: ebdf3_step(ts, ys, dys[-2]), 3),
+               (lambda ts, ys, dys: ebdf3_dynm1_step(ts, ys, dys[-3]), 3),
+               ]
+
+    for method, order in methods:
+        yield check_explicit_stepper, method, order
 
 
 def test_dydt_calcs():
 
-    def check_dydt_calcs(dydt_calculator, order, dt, dydt_exact, y_exact):
+    def check_dydt_calcs(dydt_calculator, order, dt, symfunc):
         """Check that derivative approximations are roughly as accurate as
         expected for a few functions.
         """
 
+        residual, dydt, exact = er.triple_from_symfunc(symfunc)
+
         ts = sp.arange(0, 0.5, dt)
-        exact_ys = map(y_exact, ts)
-        exact_dys = map(dydt_exact, ts, exact_ys)
+        exact_ys = map(exact, ts)
+        exact_dys = map(dydt, ts, exact_ys)
 
         est_dys = map(dydt_calculator, utils.partial_lists(ts, 5),
                       utils.partial_lists(exact_ys, 5))
 
         utils.assert_list_almost_equal(est_dys, exact_dys[4:], 10*(dt**order))
 
-    fs = [(poly_dydt, poly_exact),
-          (exp_dydt, exp_exact),
-          (exp_of_poly_dydt, exp_of_poly_exact),
-          ]
+    symfuncs = [er.poly, er.exp, er.exp_of_poly]
 
     dydt_calculators = [(bdf2_dydt, 2),
                         (bdf3_dydt, 3),
@@ -1172,26 +1221,27 @@ def test_dydt_calcs():
     dts = [0.1, 0.01, 0.001]
 
     for dt in dts:
-        for dydt_exact, y_exact in fs:
+        for s in symfuncs:
             for dydt_calculator, order in dydt_calculators:
-                yield check_dydt_calcs, dydt_calculator, order, dt, dydt_exact, y_exact
+                yield check_dydt_calcs, dydt_calculator, order, dt, s
 
 
 def test_exp_timesteppers():
 
     # Auxilary checking function
     def check_exp_timestepper(method, tol):
-        def residual(t, y, dydt):
-            return y - dydt
+
+        residual, dydt, exact = er.triple_from_symfunc(er.exp)
+
         tmax = 1.0
         dt = 0.001
-        ys, ts = odeint(exp_residual, [exp(0.0)], tmax, dt=dt,
+        ys, ts = odeint(residual, [exp(0.0)], tmax, dt=dt,
                         method=method)
 
         # plt.plot(ts,ys)
         # plt.plot(ts, map(exp,ts), '--r')
         # plt.show()
-        utils.assert_almost_equal(ys[-1], exp(tmax), tol)
+        utils.assert_almost_equal(ys[-1], exact(tmax), tol)
 
     # List of test parameters
     methods = [('bdf2', 1e-5),
@@ -1240,23 +1290,11 @@ def test_adaptive_dt():
                ({'label':'tr ab'}, 1e-4),
                ]
 
-    functions = [(exp_residual, exp, exp_dydt),
-                 # (exp_of_minus_t_residual, exp_of_minus_t_exact, exp_of_minus_t_dydt),
-                 (poly_residual, poly_exact, poly_dydt),
-                 (exp_of_poly_residual, exp_of_poly_exact, exp_of_poly_dydt)
-                 ]
+    symfuncs = [er.exp, er.poly, er.exp_of_poly]
 
     for meth, tol in methods:
-        for residual, exact, dydt in functions:
-
-            # If we can, then put the dydt function name into the dict,
-            # most methods shouldn't need this.
-            try:
-                meth['dydt_func'] = dydt
-            except TypeError:
-                pass
-
-            yield check_problem, meth, residual, exact, tol
+        for s in symfuncs:
+            yield check_problem, meth, s, tol
 
 
 def test_sharp_dt_change():
@@ -1268,12 +1306,10 @@ def test_sharp_dt_change():
     tmax = 2.5
     tol = 1e-4
 
-    # Set up functions
-    residual = par(tanh_residual, alpha=alpha, step_time=step_time)
-    exact = par(tanh_exact, alpha=alpha, step_time=step_time)
+    symfunc = er.tanh_problem(alpha, step_time)
 
     # Run it
-    return check_problem('midpoint ab', residual, exact, tol=tol)
+    return check_problem('midpoint ab', symfunc, tol=tol)
 
 
 # def test_with_stiff_problem():
