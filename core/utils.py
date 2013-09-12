@@ -1,17 +1,18 @@
 
 from __future__ import division
+from __future__ import absolute_import
+
 import collections
-from math import sin, cos, tan, log, atan2, acos, pi, sqrt
 import scipy as sp
 import scipy.linalg
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import itertools as it
 import operator as op
 import functools as ft
 
 from functools import partial as par
 from os.path import join as pjoin
+from math import sin, cos, tan, log, atan2, acos, pi, sqrt
+
 
 # General
 # ============================================================

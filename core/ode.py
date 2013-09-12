@@ -1,20 +1,22 @@
 from __future__ import division
+from __future__ import absolute_import
 
-from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 import scipy as sp
 import scipy.integrate
-from scipy.linalg import norm
-import scipy.optimize.nonlin
+import scipy.linalg
+import scipy.optimize
 import functools as ft
-from functools import partial as par
 import itertools as it
 import copy
-from scipy.interpolate import krogh_interpolate
 import sys
 
-import utils as utils
+from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
+from scipy.interpolate import krogh_interpolate
+from scipy.linalg import norm
+from functools import partial as par
 
-import scipy.linalg
+import simpleode.core.utils as utils
+
 
 # PARAMETERS
 MAX_ALLOWED_DT_SCALING_FACTOR = 3.0
@@ -1066,7 +1068,7 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
 # Testing
 # ============================================================
 import matplotlib.pyplot as plt
-from example_residuals import *
+from simpleode.core.example_residuals import *
 
 
 def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
