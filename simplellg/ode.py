@@ -128,7 +128,15 @@ def _timestep_scheme_factory(method):
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 4)
+        return midpoint_residual, adaptor, par(higher_order_start, 5)
+
+    elif label == 'midpoint ebdf3dynm1':
+        dydt_func = _method_dict.get('dydt_func', None)
+        lte_est = par(ebdf3_dynm1_lte_estimate, dydt_func=dydt_func)
+        adaptor = par(general_time_adaptor,
+                      lte_calculator=lte_est,
+                      method_order=2)
+        return midpoint_residual, adaptor, par(higher_order_start, 5)
 
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
@@ -426,6 +434,19 @@ def ebdf3_step(ts, ys, dyn):
     return -(dyn*(-dtn**3*dtnm1**2*dtnm2 - dtn**3*dtnm1*dtnm2**2 - 2*dtn**2*dtnm1**3*dtnm2 - 3*dtn**2*dtnm1**2*dtnm2**2 - dtn**2*dtnm1*dtnm2**3 - dtn*dtnm1**4*dtnm2 - 2*dtn*dtnm1**3*dtnm2**2 - dtn*dtnm1**2*dtnm2**3) + yn*(2*dtn**3*dtnm1*dtnm2 + dtn**3*dtnm2**2 + 3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + dtn**2*dtnm2**3 - dtnm1**4*dtnm2 - 2*dtnm1**3*dtnm2**2 - dtnm1**2*dtnm2**3) + ynm1*(-dtn**3*dtnm1**2 - 2*dtn**3*dtnm1*dtnm2 - dtn**3*dtnm2**2 - dtn**2*dtnm1**3 - 3*dtn**2*dtnm1**2*dtnm2 - 3*dtn**2*dtnm1*dtnm2**2 - dtn**2*dtnm2**3) + ynm2*(dtn**3*dtnm1**2 + dtn**2*dtnm1**3))/(dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)
 
 
+def ebdf3_dynm1_step(ts, ys, dynm1):
+    dtn = ts[-1] - ts[-2]
+    dtnm1 = ts[-2] - ts[-3]
+    dtnm2 = ts[-3] - ts[-4]
+
+    ynp1 = ys[-1]
+    yn = ys[-2]
+    ynm1 = ys[-3]
+    ynm2 = ys[-4]
+
+    return dynm1*(-dtn**3*dtnm1**2*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + yn*(dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm1*(dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm2*(-dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3))
+
+
 def midpoint_residual(base_residual, ts, ys):
     dt_n = ts[-1] - ts[-2]
     y_n = ys[-2]
@@ -449,6 +470,28 @@ def midpoint_dydt(ts, ys):
 
     dydt = sp.array((y_np1 - y_n)/dt_n)
     return dydt
+
+
+def interpolate_dyn(ts, ys):
+    #??ds probably not accurate enough
+
+    order = 3
+    ts = ts[-1*order-1:]
+    ys = ys[-1*order-1:]
+
+    ynp1_list = ys[1:]
+    yn_list = ys[:-1]
+    dts = utils.ts2dts(ts)
+
+    # double check steps match
+    midpoint_ts = map(lambda tn, tnp1: (tn + tnp1)/2, ts[1:], ts[:-1])
+    midpoint_dys = map(lambda dt, ynp1, yn: (ynp1 -yn)/dt,
+                       dts, ynp1_list, yn_list)
+
+    dyn = (sp.interpolate.barycentric_interpolate
+           (midpoint_ts, midpoint_dys, ts[-2]))
+
+    return dyn
 
 
 def bdf1_residual(base_residual, ts, ys):
@@ -920,11 +963,39 @@ def ebdf3_lte_estimate(ts, ys, dydt_func=None):
 
     # Use BDF approximation to dyn if no function given
     if dydt_func is None:
-        dyn = bdf3_dydt(ts[:-1], ys[:-1])
+        # dyn = bdf3_dydt(ts[:-1], ys[:-1])
+        dyn = interpolate_dyn(ts, ys)
     else:
         dyn = dydt_func(ts[-2], ys[-2])
 
     y_np1_EBDF3 = ebdf3_step(ts, ys, dyn)
+
+    return ys[-1] - y_np1_EBDF3
+
+
+def ebdf3_dynm1_lte_estimate(ts, ys, dydt_func=None):
+    """Estimate lte for with the third order explicit bdf method w/
+    derivative point at y_{n-1}. Useful for midpoint?
+    """
+
+    # Use BDF approximation to dyn if no function given
+    if dydt_func is None:
+        # assuming midpoint method is the real timestepper
+        dynm1 = midpoint_dydt(ts[:-1], ys[:-1]) - midpoint_dydt(ts[:-2], ys[:-2])
+    else:
+        dynm1 = dydt_func(ts[-3], ys[-3])
+
+        # # debugging ??ds
+        # dtn = ts[-1] - ts[-2]
+        # err_margin = 25* dtn**2
+        # est_dynm1 = (midpoint_dydt(ts[:-1], ys[:-1]) - midpoint_dydt(ts[:-2], ys[:-2]))/2
+        # if not utils.almost_equal(dynm1, est_dynm1, err_margin):
+        #     print
+        #     print dynm1
+        #     print est_dynm1
+        #     print "diff =", abs(dynm1 - est_dynm1), ">", err_margin
+
+    y_np1_EBDF3 = ebdf3_dynm1_step(ts, ys, dynm1)
 
     return ys[-1] - y_np1_EBDF3
 
