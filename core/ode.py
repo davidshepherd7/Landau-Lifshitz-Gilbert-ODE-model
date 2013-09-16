@@ -140,6 +140,16 @@ def _timestep_scheme_factory(method):
                       method_order=2)
         return midpoint_residual, adaptor, par(higher_order_start, 5)
 
+    elif label == 'midpoint f13':
+
+        F_func = _method_dict.get('F_func', None)
+
+        lte_est = par(f13_lte_est, F_func=F_func)
+        adaptor = par(general_time_adaptor,
+                      lte_calculator=lte_est,
+                      method_order=2)
+        return midpoint_residual, adaptor, par(higher_order_start, 5)
+
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
         # getting derivatives of y from implicit formulas we need an extra
@@ -300,7 +310,7 @@ def newton(residual, x0, jacobian=None, newton_tol=1e-8, solve_function=None,
 
     # Wrap the solve function to deal with non-matrix cases (i.e. when we
     # only have one degree of freedom and the "Jacobian" is just a number).
-    def wrapped_solve(A,b):
+    def wrapped_solve(A, b):
         if len(b) == 1:
             return b/A[0][0]
         else:
@@ -441,7 +451,6 @@ def ebdf3_dynm1_step(ts, ys, dynm1):
     dtnm1 = ts[-2] - ts[-3]
     dtnm2 = ts[-3] - ts[-4]
 
-    ynp1 = ys[-1]
     yn = ys[-2]
     ynm1 = ys[-3]
     ynm2 = ys[-4]
@@ -1065,6 +1074,57 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
     return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
+# Scheme from friday 13th-ish
+# ============================================================
+
+def f13_f_hat_midpoint(ts, ys_est):
+    """Extract derivative approximation used by midpoint method from
+    y-values output by midpoint method.
+    """
+    dtn = ts[-1] - ts[-2]
+    return (ys_est[-1] - ys_est[-2])/dtn
+
+
+def f13_lte_est(ts, ys, F_func):
+
+    f_hat_nph = f13_f_hat_midpoint(ts, ys)
+    f_hat_nmh = f13_f_hat_midpoint(ts[:-1], ys[:-1])
+
+    dtn = ts[-1] - ts[-2]
+    dtnm1 = ts[-2] - ts[-3]
+
+    ynp1_MP = ys[-1]
+    yn = ys[-2]
+    ynm1 = ys[-3]
+
+    # ??ds rough approximation to ynph used here... should be ok maybe...
+    Fnph = F_func(ts[-2] + dtn/2, (ynp1_MP + yn)/2)
+
+    assert Fnph == 0
+
+    # (rough) Approximations!
+    ddyn_approx = (f_hat_nph - (dtn/dtnm1) * f_hat_nmh)
+    print ddyn_approx
+
+    Fdotddyn_approx = sp.dot(Fnph, ddyn_approx)
+
+    dyn_approx = ((1/2)*(f_hat_nph + (dtn/dtnm1) * f_hat_nmh)
+                  - (dtn**2/8)*Fdotddyn_approx)
+
+    ynp1_P = emr_step(dtn, yn, dyn_approx, dtnm1, ynm1)
+
+    print dtn, ynp1_P, ynp1_MP
+
+    divfac = (1/4) * (dtn/6*dtnm1)
+    dddynph_approx = ((1/(dtn**3 * divfac)) * (ynp1_MP - ynp1_P)
+                      - (1/(8*divfac))*Fdotddyn_approx)
+
+    LTEn = (1/10000)*(dtn**3/24) * (dddynph_approx - 3*Fdotddyn_approx)
+
+    return LTEn
+
+
+
 # Testing
 # ============================================================
 import matplotlib.pyplot as plt
@@ -1299,6 +1359,10 @@ def test_sharp_dt_change():
 #     assert n_steps < 5000
 
 def test_newton():
+    def check_newton(residual, exact):
+        solution = newton(residual, sp.array([1.0]*len(exact)))
+        utils.assert_list_almost_equal(solution, exact)
+
     tests = [(lambda x: sp.array([x**2 - 2]), sp.array([sp.sqrt(2)])),
              (lambda x: sp.array([x[0]**2 - 2, x[1] - x[0] - 1]),
               sp.array([sp.sqrt(2), sp.sqrt(2) + 1])),
@@ -1306,7 +1370,3 @@ def test_newton():
 
     for res, exact in tests:
         check_newton(res, exact)
-
-def check_newton(residual, exact):
-    solution = newton(residual, sp.array([1.0]*len(exact)))
-    utils.assert_list_almost_equal(solution, exact)
