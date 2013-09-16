@@ -6,7 +6,7 @@ import scipy as sp
 def exp_residual(t, y, dydt): return y - dydt
 def exp_dydt(t, y): return y
 def exp_exact(t): return exp(t)
-
+def exp_dfdy(t, y): return 1
 
 def exp3_residual(t, y, dydt): return 3*y - dydt
 def exp3_dydt(t, y): return 3 * y
@@ -21,12 +21,14 @@ def exp_of_minus_t_dydt(t, y): return -y
 def poly_residual(t, y, dydt): return 4*t**3 + 2*t - dydt
 def poly_exact(t): return t**4 + t**2
 def poly_dydt(t, y): return poly_residual(t, y, 0)
+def poly_dfdy(t, y): return 0
 
 # Useful because 2nd order integrators should be exact (and adaptive ones
 # should recognise this and rapidly increase dt).
 def square_residual(t, y, dydt): return 2*t - dydt
 def square_dydt(t, y): return square_residual(t, y, 0)
 def square_exact(t): return t**2
+def square_dfdy(t, y): return 0
 
 
 def exp_of_poly_residual(t, y, dydt): return exp_of_poly_dydt(t, y) - dydt
@@ -104,3 +106,5 @@ def constant_residual(t, y, dydt):
     return dydt - constant_dydt(t, y)
 def constant_exact(t):
     return 1
+def constant_dfdy(t, y):
+    return 0
