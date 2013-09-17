@@ -431,7 +431,7 @@ def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
 ebdf2_step = emr_step
 
 
-def ibdf2_step(dtn, dtnm1, yn, ynm1, dynp1):
+def ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1):
     """Take an implicit (normal) bdf2 step, must provide the derivative or
     some approximation to it. For solves use residuals instead.
 

@@ -98,7 +98,7 @@ def m16_scheme():
         # Natural bdf2 lte:
         bdf2_lte(dts[0]/2, dts[1], dddynph)
         # Error due to imr approximation to derivative:
-        + ode.ibdf2_step(dts[0]/2, dts[1], 0, 0, y_nph_mp_err))
+        + ode.ibdf2_step(dts[0]/2, 0,  y_nph_mp_err, dts[1], 0))
 
 
     # Error on y_np1_P2 (as calculated using y_nph from bdf2 and y'_nph
@@ -146,7 +146,7 @@ def t17_scheme():
         # Natural bdf2 lte:
         bdf2_lte(dts[0]/2, dts[1], dddynph)
         # Error due to imr approximation to derivative:
-        + ode.ibdf2_step(dts[0]/2, dts[1], 0, 0, y_nph_mp_err))
+        + ode.ibdf2_step(dts[0]/2, 0,  y_nph_mp_err, dts[1], 0))
 
     # Error on y_np1_P2 (as calculated using y_nph from bdf2 and y'_nph
     # from imr in eBDF2 at time points tnm1 = tn, tn=tnph ,tnp1 = tnp1).
