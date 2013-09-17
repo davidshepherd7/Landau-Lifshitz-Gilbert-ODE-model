@@ -8,6 +8,7 @@ import scipy.linalg
 import itertools as it
 import operator as op
 import functools as ft
+import sympy
 
 from functools import partial as par
 from os.path import join as pjoin
