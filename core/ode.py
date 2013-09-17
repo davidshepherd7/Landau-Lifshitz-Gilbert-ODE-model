@@ -427,12 +427,24 @@ def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
     y_np1 = (1 - dtr**2)*y_n + (1 + dtr)*dt_n*dy_n + (dtr**2)*(y_nm1)
     return y_np1
 
+# Same thing:
+ebdf2_step = emr_step
 
-def ebdf3_step(ts, ys, dyn):
-    """Calculate one step of "explicitBDF3", i.e. the third order analogue
-    of explicit midpoint rule.
 
-    Code is generated using sym-bdf3.py.
+def ibdf2_step(dtn, dtnm1, yn, ynm1, dynp1):
+    """Take an implicit (normal) bdf2 step, must provide the derivative or
+    some approximation to it. For solves use residuals instead.
+
+    From Gresho and Sani pg.715.
+    """
+
+    # ??ds possibly not the most stable formulation
+    # numerically... differences of similar things!
+    return yn + dtn*(dtn/(2*dtn + dtnm1)) *((yn - ynm1)/dtnm1) + dtn*(dtn + dtnm1)/(2*dtn + dtnm1)*dynp1
+
+
+def ebdf3_step_wrapper(ts, ys, dyn):
+    """Get required values from ts, ys vectors and call ebdf3_step.
     """
 
     dtn = ts[-1] - ts[-2]
@@ -443,6 +455,15 @@ def ebdf3_step(ts, ys, dyn):
     ynm1 = ys[-3]
     ynm2 = ys[-4]
 
+    return ebdf3_step(dtn, yn, dyn, dtnm1, ynm1, dtnm2, ynm2)
+
+
+def ebdf3_step(dtn, yn, dyn, dtnm1, ynm1, dtnm2, ynm2):
+    """Calculate one step of "explicitBDF3", i.e. the third order analogue
+    of explicit midpoint rule.
+
+    Code is generated using sym-bdf3.py.
+    """
     return -(dyn*(-dtn**3*dtnm1**2*dtnm2 - dtn**3*dtnm1*dtnm2**2 - 2*dtn**2*dtnm1**3*dtnm2 - 3*dtn**2*dtnm1**2*dtnm2**2 - dtn**2*dtnm1*dtnm2**3 - dtn*dtnm1**4*dtnm2 - 2*dtn*dtnm1**3*dtnm2**2 - dtn*dtnm1**2*dtnm2**3) + yn*(2*dtn**3*dtnm1*dtnm2 + dtn**3*dtnm2**2 + 3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + dtn**2*dtnm2**3 - dtnm1**4*dtnm2 - 2*dtnm1**3*dtnm2**2 - dtnm1**2*dtnm2**3) + ynm1*(-dtn**3*dtnm1**2 - 2*dtn**3*dtnm1*dtnm2 - dtn**3*dtnm2**2 - dtn**2*dtnm1**3 - 3*dtn**2*dtnm1**2*dtnm2 - 3*dtn**2*dtnm1*dtnm2**2 - dtn**2*dtnm2**3) + ynm2*(dtn**3*dtnm1**2 + dtn**2*dtnm1**3))/(dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)
 
 
@@ -979,7 +1000,7 @@ def ebdf3_lte_estimate(ts, ys, dydt_func=None):
     else:
         dyn = dydt_func(ts[-2], ys[-2])
 
-    y_np1_EBDF3 = ebdf3_step(ts, ys, dyn)
+    y_np1_EBDF3 = ebdf3_step_wrapper(ts, ys, dyn)
 
     return ys[-1] - y_np1_EBDF3
 
