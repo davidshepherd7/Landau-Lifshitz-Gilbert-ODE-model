@@ -45,6 +45,15 @@ MAX_ALLOWED_TIMESTEP = 1e8
 # variable names).
 
 
+
+# Random notes:
+# ============================================================
+
+# Try to always use fractions rather than floating point values because
+# this allows us to use the same functions in sympy for algebraic
+# computations without loss of accuracy.
+
+
 class FailedTimestepError(Exception):
     def __init__(self, new_dt):
         self.new_dt = new_dt
@@ -415,7 +424,7 @@ def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
     """Take a single step of the Adams-Bashforth 2 method.
     """
     dtr = dt_n / dt_nm1
-    y_np1 = y_n + 0.5*dt_n*((2 + dtr)*dy_n - dtr*dy_nm1)
+    y_np1 = y_n + (dt_n/2)*((2 + dtr)*dy_n - dtr*dy_nm1)
     return y_np1
 
 
