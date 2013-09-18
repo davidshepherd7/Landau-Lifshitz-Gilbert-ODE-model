@@ -158,6 +158,9 @@ def main():
     # print "\n\n code for iBDF3 dydt approximation:"
     # print my_bdf_code_gen(3, 0, True)
 
+    print "\n\n code for iBDF3 step:"
+    print my_bdf_code_gen(3, 0, True)
+
     # print "\n\n code for iBDF4 dydt approximation:"
     # print my_bdf_code_gen(4, 0, True)
 
