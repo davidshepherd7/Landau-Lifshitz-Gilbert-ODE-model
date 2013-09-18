@@ -33,6 +33,7 @@ def bdf2_lte(dtn, dtnm1, dddyn):
     """
     return -((dtn + dtnm1)**2/(dtn*(2*dtn + dtnm1))) * dtn**3 * dddyn/6
 
+
 def bdf3_lte(dtn, dtnm1, dtnm2, dddyn):
     """Gresho and Sani pg.715, sign inverted
     """
@@ -82,18 +83,27 @@ def constify_step(expr):
     return expr.subs([(dts[1], dts[0]), (dts[2], dts[0]), (dts[3], dts[0])])
 
 
-# Define symbol names
-# ============================================================
-dts = sympy.symbols('Delta0:9', Real=True)
-dddynph = sympy.symbols("y'''_h", Real=True)
-Fddynph = sympy.symbols("F.y''_h", Real=True)
-y_np1_exact = sympy.symbols('y_0', Real=True)
-y_np1_imr, y_np1_p2, y_np1_p1 = sympy.symbols('y_0_imr y_0_p2 y_0_p1',
-                                              Real=True)
+def cse_print(expr):
+    cses, simple_expr = cse(expr)
+    print
+    print sympy.pretty(simple_expr)
+    pp(cses)
+    print
 
 
-# Calculate full errors
-# ============================================================
+def system2matrix(system, variables):
+    """Create a matrix from a system of equations (assuming it's linear!).
+    """
+    A = sympy.Matrix([[None]*len(system)]*len(variables))
+    for i, eqn in enumerate(system):
+        for j, var in enumerate(variables):
+            # Create a dict where all vars except this one are zero, this
+            # one is one.
+            subs_dict = dict([(v, 1 if v == var else 0) for v in variables])
+            A[i, j] = eqn.subs(subs_dict)
+
+    return A
+
 
 def is_rational(x):
     try:
@@ -104,7 +114,7 @@ def is_rational(x):
         return math.floor(x) == x
 
 
-def rat_as_mixed(x):
+def rational_as_mixed(x):
     """Convert a rational number to (integer_part, remainder_as_fraction)
     """
     assert is_rational(x) # Don't want to accidentally end up with floats
@@ -133,151 +143,196 @@ def sum_dts(a, b):
         return -1 * sum_dts(b, a)
 
     # Deal with non-integer a
-    a_int, a_frac = rat_as_mixed(a)
+    a_int, a_frac = rational_as_mixed(a)
     if a_frac != 0:
         return a_frac * dts[a_int] + sum_dts(a_int, b)
 
-    b_int, b_frac = rat_as_mixed(b)
+    b_int, b_frac = rational_as_mixed(b)
     if b_frac != 0:
         return b_frac * dts[b_int] + sum_dts(a, b_int)
 
     return sum(dts[a:b])
 
 
-def m16_scheme():
-    """Generate dictionary of coeffs for the scheme.
+def bdf2_step_to_midpoint(ts, ys):
+
+    dtn = (ts[-1] - ts[-2])/2
+    dtnm1 = ts[-2] - ts[-3]
+
+    dynp1 = ode.midpoint_dydt(ts, ys)
+    yn = ys[-2]
+    ynm1 = ys[-3]
+
+    return ode.ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1)
+
+
+# Define symbol names
+# ============================================================
+dts = sympy.symbols('Delta0:9', Real=True)
+dddynph = sympy.symbols("y'''_h", Real=True)
+Fddynph = sympy.symbols("F.y''_h", Real=True)
+y_np1_exact = sympy.symbols('y_0', Real=True)
+y_np1_imr, y_np1_p2, y_np1_p1 = sympy.symbols('y_0_imr y_0_p2 y_0_p1',
+                                              Real=True)
+
+
+# Calculate full errors
+# ============================================================
+def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
+
+    p_t0, p_t1, p_t2, p_name = scheme
+
+    p_dtn = sum_dts(p_t0, p_t1)
+    p_dtnm1 = sum_dts(p_t1, p_t2)
+
+    # Construct errors and func for dyn estimate
+    # ============================================================
+
+    if dyn_estimate == "midpoint":
+        assert p_t0 == 0
+        assert p_t1 == sRat(1,2)
+        dyn_error = midpoint_f_approximation_error(dts[0], Fddynph)
+        dynm1_error = midpoint_f_approximation_error(dts[1], Fddynph)
+        # + higher order terms due to expanding F, ddy from nmh to nph,
+        # luckily for us these end up in O(dtn**4).
+
+        dyn_func = ode.midpoint_dydt
+
+    else:
+        raise ValueError("Unrecognised dyn_estimate name " + dyn_estimate)
+
+
+    # Construct errors and func for yn estimate
+    # ============================================================
+
+    if yn_estimate == "bdf2":
+        # Error on y_nph as calculated by BDF2 using midpoint approximation for
+        # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1
+        yn_error = (
+            # Natural bdf2 lte:
+            bdf2_lte(dts[0]*sRat(1,2), dts[1], dddynph)
+            # Error due to imr approximation to derivative:
+            + ode.ibdf2_step(dts[0]*sRat(1,2), 0,  dyn_error, dts[1], 0))
+
+        # Function to estimate ynph
+        yn_func = bdf2_step_to_midpoint
+
+    elif yn_estimate == "bdf3":
+        # Error on y_nph as calculated by BDF2 using midpoint approximation for
+        # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1, tnm2 = tnm2
+        yn_error = (
+            # Natural bdf2 lte:
+            0
+            # Error due to imr approximation to derivative:
+            + ode.ibdf3_step(dyn_error, dts[0]*sRat(1,2), 0,  dts[1], 0, dts[2], 0))
+
+        # Function to estimate ynph
+        yn_func = None
+    else:
+        raise ValueError("Unrecognised yn_estimate name " + yn_estimate)
+
+
+    # Construct errors and function for the predictor
+    # ============================================================
+
+    if p_name == "ebdf2":
+        y_np1_p_expr = y_np1_exact - (
+            # Natural ebdf2 lte:
+            ebdf2_lte(p_dtn, p_dtnm1, dddynph)
+            # error due to imr approximation to derivative:
+            + ode.ebdf2_step(p_dtn, 0, dyn_error, p_dtnm1, 0)
+            # error due to bdf2 approximation to midpoint: y
+            + ode.ebdf2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
+
+        def p_func():
+
+            # Only works for tn = t{n+1/2}
+            assert p_t0 == 0
+            assert p_t1 == sRat(1,2)
+            dtn = (ts[-1] - ts[-2])/2
+            dtnm1 = dtn + ts[-2] - ts[-(p_t2+1)]
+            #
+
+            ynm1 = ys[-(p_t2+1)]
+            dyn = dyn_func(ts, ys)
+            yn = yn_func(ts, ys)
+            return ode.ebdf2_step(dtn, yn, dyn, dtnm1, ynm1)
+
+
+    elif p_name == "ab2":
+
+        if dyn_estimate == "midpoint":
+            assert p_t2 == sRat(3,2)
+
+        # Use the same estimate for dyn and dynm1 (except at different
+        # points)
+        y_np1_p_expr = y_np1_exact - (
+            # Natural ab2 lte:
+            ab2_lte(p_dtn, p_dtnm1, dddynph)
+            # error due to approximation to derivative at tn
+            + ode.ab2_step(p_dtn, 0, dyn_error, p_dtnm1, 0)
+            # error due to approximation to derivative at tnm1
+            + ode.ab2_step(p_dtn, 0, 0, p_dtnm1, dynm1_error)
+            # error due to approximation to midpoint: y
+            + ode.ab2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
+
+
+        def p_func():
+
+            # Only works for tn = t{n+1/2}
+            assert p_t0 == 0
+            assert p_t1 == sRat(1,2)
+            dtn = (ts[-1] - ts[-2])/2
+            dtnm1 = dtn + ts[-2] - ts[-(p_t2+1)]
+            #
+
+            dyn = dyn_func(ts, ys)
+            dynm1 = dyn_func(ts[:-1], ys[:-1])
+            yn = yn_func(ts, ys)
+            return ode.ab2_step(dtn, yn, dyn, dtnm1, dynm1)
+
+    else:
+        raise ValueError("Unrecognised predictor name " + p_name)
+
+    return p_func, y_np1_p_expr
+
+
+def general_two_predictor(p1_scheme, p2_scheme, yn_estimate="bdf2",
+                          dyn_estimate="midpoint"):
+    """Generate two-predictor lte system of equations and predictor step
+    functions.
     """
 
-    y_nph_mp_err = midpoint_f_approximation_error(dts[0], Fddynph)
+    # Generate the two schemes
+    p1_func, y_np1_p1_expr = generate_predictor_scheme(p1_scheme, yn_estimate,
+                                                       dyn_estimate)
+    p2_func, y_np1_p2_expr = generate_predictor_scheme(p2_scheme, yn_estimate,
+                                                       dyn_estimate)
 
-    # Error on y_nph as calculated by BDF2 using midpoint approximation for
-    # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1
-    y_nph_err = (
-        # Natural bdf2 lte:
-        bdf2_lte(dts[0]/2, dts[1], dddynph)
-        # Error due to imr approximation to derivative:
-        + ode.ibdf2_step(dts[0]/2, 0,  y_nph_mp_err, dts[1], 0))
+    # LTE for IMR: just natural lte:
+    y_np1_imr_expr = y_np1_exact - imr_lte(dts[0], dddynph, Fddynph)
 
-
-    # Error on y_np1_P2 (as calculated using y_nph from bdf2 and y'_nph
-    # from imr in eBDF2 at time points tnm1 = tn, tn=tnph ,tnp1 = tnp1).
-    y_np1_p2_expr = y_np1_exact - (
-        # Natural ebdf2 lte:
-        ebdf2_lte(dts[0]/2, dts[0]/2, dddynph)
-        # error due to imr approximation to derivative:
-        + ode.ebdf2_step(dts[0]/2, 0, y_nph_mp_err, dts[0]/2, 0)
-        # error due to bdf2 approximation to midpoint:
-        + ode.ebdf2_step(dts[0]/2, y_nph_err, 0, dts[0]/2, 0))
-
-    # Error on y_np1_P3 (as calculated using y_nph from bdf2 and y'_nph
-    # from imr in eBDF3 at time points tnm2 = tnm1, tnm1 = tn, tn = tnph, tnp1 = tnp1).
-    y_np1_p3_expr = y_np1_exact - (
-        # Natural ebdf3 lte:
-        ebdf3_lte(dts[0]/2, dts[0]/2, dts[1], dddynph)
-        # error due to imr approximation to derivative:
-        + ode.ebdf3_step(dts[0]/2, 0, y_nph_mp_err, dts[0]/2, 0, dts[1], 0)
-        # error due to bdf2 approximation to midpoint: y
-        + ode.ebdf3_step(dts[0]/2, y_nph_err, 0, dts[0]/2, 0, dts[1], 0))
-
-    y_np1_imr_expr = y_np1_exact - (
-        # Just natural lte here:
-        imr_lte(dts[0], dddynph, Fddynph))
-
-    coeff_dict = dict(
-        a_p2=get_a(y_np1_p2_expr),
-        b_p2=get_b(y_np1_p2_expr),
-        a_p3=get_a(y_np1_p3_expr),
-        b_p3=get_b(y_np1_p3_expr),
-        a_imr=get_a(y_np1_imr_expr),
-        b_imr=get_b(y_np1_imr_expr))
-
-    return coeff_dict
-
-
-def t17_scheme():
-
-    y_nph_mp_err = midpoint_f_approximation_error(dts[0], Fddynph)
-
-    # Error on y_nph as calculated by BDF2 using midpoint approximation for
-    # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1
-    y_nph_err = (
-        # Natural bdf2 lte:
-        bdf2_lte(dts[0]/2, dts[1], dddynph)
-        # Error due to imr approximation to derivative:
-        + ode.ibdf2_step(dts[0]/2, 0,  y_nph_mp_err, dts[1], 0))
-
-    # Error on y_np1_P2 (as calculated using y_nph from bdf2 and y'_nph
-    # from imr in eBDF2 at time points tnm1 = tn, tn=tnph ,tnp1 = tnp1).
-    y_np1_p2_expr = y_np1_exact - (
-        # Natural ebdf2 lte:
-        ebdf2_lte(dts[0]/2, dts[0]/2, dddynph)
-        # error due to imr approximation to derivative:
-        + ode.ebdf2_step(dts[0]/2, 0, y_nph_mp_err, dts[0]/2, 0)
-        # error due to bdf2 approximation to midpoint:
-        + ode.ebdf2_step(dts[0]/2, y_nph_err, 0, dts[0]/2, 0))
-
-    # Error on y_np1_P3 (as calculated using y_nph from bdf2 and y'_nph
-    # from imr in eBDF2 at time points tnm1 = tm1, tn=tnph ,tnp1 = tnp1).
-    y_np1_p3_expr = y_np1_exact - (
-        # Natural ebdf2 lte:
-        ebdf2_lte(dts[0]/2, dts[0]/2 + dts[1], dddynph)
-        # error due to imr approximation to derivative:
-        + ode.ebdf2_step(dts[0]/2 + dts[1], 0, y_nph_mp_err, dts[0]/2, 0)
-        # error due to bdf2 approximation to midpoint:
-        + ode.ebdf2_step(dts[0]/2 + dts[1], y_nph_err, 0, dts[0]/2, 0))
-
-    y_np1_imr_expr = y_np1_exact - (
-        # Just natural lte here:
-        imr_lte(dts[0], dddynph, Fddynph))
-
-    coeff_dict = dict(
-        a_p2=get_a(y_np1_p2_expr),
-        b_p2=get_b(y_np1_p2_expr),
-        a_p3=get_a(y_np1_p3_expr),
-        b_p3=get_b(y_np1_p3_expr),
-        a_imr=get_a(y_np1_imr_expr),
-        b_imr=get_b(y_np1_imr_expr))
-
-    return coeff_dict
-
-
-def full_method(error_calculator):
-
-    # Do the calculation in two parts so that sympy can handle it easier:
-    # 1) Calculate lte expressions for each integrator and break into a set
-    # of coefficients for each term (y''', f.y'' and y_{n+1}) in each lte.
-    # 2) Invert the matrix of (single symbol) coefficients, with some
-    # coefficients filled in.
-    # 3) Subs in the full coeff expressions into the now-inverted system.
-
-    coeff_dict = error_calculator()
-
-    # Create and invert matrix of coefficients of y''', f.y'' and y_{n+1}.
-    a_p2, b_p2, a_p3, b_p3, a_imr, b_imr = sympy.symbols('a_p2, b_p2, a_p3, b_p3, a_imr, b_imr')
-    A = sympy.Matrix([[a_p2, b_p2, 1],
-                      [a_p3, b_p3, 1],
-                      [a_imr, b_imr, 1]])
-    b = sympy.Matrix([y_np1_p2, y_np1_p3, y_np1_imr])
-    x = A.LUsolve(b)
-
-    # substitue in the coeff values
-    full_x = [xi.subs(coeff_dict) for xi in x]
-    full_x_coeffs = [get_coeffs(xi) for xi in full_x]
-
-    return full_x_coeffs
+    # Return error expressions and stepper functions
+    return (y_np1_p1_expr, y_np1_p2_expr, y_np1_imr_expr), (p1_func, p2_func)
 
 
 def main():
 
+    p1 = (0, sRat(1,2), 2, "ebdf2")
+    p2 = (0, sRat(1,2), sRat(3,2), "ab2")
+    lte_equations, (p1_func, p2_func) \
+      = general_two_predictor(p1, p2, "bdf2", "midpoint")
 
-    full_x_coeffs = full_method(t17_scheme)
+    A = system2matrix(lte_equations, [dddynph, Fddynph, y_np1_exact])
+    x = A.inv()
 
-    # # Print with constant step sizes
-    # coeffs_flat = list(it.chain(*full_x_coeffs))
-    # print sympy.pretty([constify_step(xi).simplify() for xi in coeffs_flat])
+    # We can get nice expressions by factorising things (row 2 dotted with
+    # [predictor values] gives us y_np1_exact, I think):
+    print sympy.pretty([xi.factor() for xi in x.row(2)])
 
-    coeffs_flat = list(it.chain(*full_x_coeffs))
-    print [xi.simplify() for xi in coeffs_flat]
+    # Look at some things for the constant step case:
+    cse_print(constify_step(x))
+    print sympy.pretty(constify_step(A).det())
 
 
 
@@ -288,7 +343,70 @@ if __name__ == '__main__':
 # Tests
 # ============================================================
 
+import simpleode.core.example_residuals as er
+import scipy as sp
 
+# def check_dddy_estimates(exact_symb):
+#     dt = 5e-2
+
+#     # Derive the required functions/derivatives:
+#     exact = sympy.lambdify(sympy.symbols('t'), exact_symb)
+
+#     dy_symb = sympy.diff(exact_symb, sympy.symbols('t'), 1).subs(exact_symb, sympy.symbols('y'))
+#     residual_symb = sympy.symbols('Dy') - dy_symb
+#     residual = sympy.lambdify((sympy.symbols('t'), sympy.symbols('y'), sympy.symbols('Dy')),
+#                               residual_symb)
+
+#     dfdy_symb = sympy.diff(dy_symb, sympy.symbols('y'))
+#     ddy_symb = sympy.diff(exact_symb, sympy.symbols('t'), 2)
+#     Fdoty = sympy.lambdify((sympy.symbols('t'), sympy.symbols('y')),
+#                            dfdy_symb * ddy_symb)
+#     exact_dddy_symb = sympy.diff(exact_symb, sympy.symbols('t'), 3)
+#     exact_dddy = sympy.lambdify(sympy.symbols('t'), exact_dddy_symb)
+
+#     print dfdy_symb, ddy_symb
+
+
+#     # Solve with midpoint
+#     est_ys, ts = ode.odeint(residual, exact(0.0), dt=dt,
+#                             tmax=3.0, method='midpoint',
+#                             newton_tol=1e-10, jacobian_fd_eps=1e-12)
+
+#     # Construct predictors
+#     p1_steps = (0, sRat(1,2), 3)
+#     p2_steps = (0, sRat(1,2), 4)
+#     lte_equations, (p1_func, p2_func) = general_two_predictor(p1_steps, p2_steps)
+
+#     # Compare estimates of values with actual values
+#     n = 5
+#     for par_ts, par_ys in zip(utils.partial_lists(ts, n), utils.partial_lists(est_ys, n)):
+#         y_np1_p1 = p1_func(par_ts, par_ys)
+#         y_np1_p2 = p2_func(par_ts, par_ys)
+
+#         dtn = par_ts[-1] - par_ts[-2]
+#         dtnm1 = par_ts[-2] - par_ts[-3]
+#         y_np1_imr = par_ys[-1]
+
+#         # dddy_est = t17_dddy_est(dtn, dtnm1, y_np1_p1, y_np1_p2, y_np1_imr)
+
+#         print dtnm1, dtn
+#         print "%0.16f" % y_np1_imr, "%0.16f" % y_np1_p1, "%0.16f" % y_np1_p2
+#         print
+#         print abs(y_np1_imr - y_np1_p2)
+#         assert abs(y_np1_imr - y_np1_p2) > 1e-8
+#         assert abs(y_np1_imr - y_np1_p1) > 1e-8
+
+#         # Fddy_est = t17_Fddy_est(dtn, dtnm1, y_np1_p1, y_np1_p2, y_np1_imr)
+
+#         dddy = exact_dddy(par_ts[-1])
+#         Fddy = Fdoty(par_ts[-1], par_ys[-1])
+
+#         # utils.assert_almost_equal(dddy_est, , min(1e-6, 30* dt**4))
+#         # utils.assert_almost_equal(Fddy_est, Fddy, min(1e-6, 30* dt**4))
+
+
+#     # check we actually did something!
+#     assert utils.partial_lists(ts, n) != []
 
 
 def test_dddy_estimates():
