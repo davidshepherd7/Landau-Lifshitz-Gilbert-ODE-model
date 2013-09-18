@@ -60,25 +60,6 @@ def midpoint_f_approximation_error(dtn, Fddynph):
 
 # Helper functions
 # ============================================================
-def get_a(expr):
-    """Get coeff of dddynph from expression.
-    """
-    return expr.subs([(y_np1_exact, 0), (dddynph,1), (Fddynph,0)])
-
-
-def get_b(expr):
-    """Get coeff of F.y''_h from expression.
-    """
-    return expr.subs([(y_np1_exact, 0), (dddynph,0), (Fddynph,1)])
-
-
-def get_coeffs(expr):
-    imr_coeff = expr.subs([(y_np1_imr, 1), (y_np1_p2,0), (y_np1_p1,0)])
-    p2_coeff = expr.subs([(y_np1_imr,0), (y_np1_p2,1), (y_np1_p1,0)])
-    p1_coeff = expr.subs([(y_np1_imr,0), (y_np1_p2,0), (y_np1_p1,1)])
-    return imr_coeff, p2_coeff, p1_coeff
-
-
 def constify_step(expr):
     return expr.subs([(dts[1], dts[0]), (dts[2], dts[0]), (dts[3], dts[0])])
 
@@ -297,8 +278,8 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     return p_func, y_np1_p_expr
 
 
-def general_two_predictor(p1_scheme, p2_scheme, yn_estimate="bdf2",
-                          dyn_estimate="midpoint"):
+def generate_two_predictor_scheme(p1_scheme, p2_scheme, yn_estimate="bdf2",
+                                  dyn_estimate="midpoint"):
     """Generate two-predictor lte system of equations and predictor step
     functions.
     """
@@ -321,7 +302,7 @@ def main():
     p1 = (0, sRat(1,2), 2, "ebdf2")
     p2 = (0, sRat(1,2), sRat(3,2), "ab2")
     lte_equations, (p1_func, p2_func) \
-      = general_two_predictor(p1, p2, "bdf2", "midpoint")
+      = generate_two_predictor_scheme(p1, p2, "bdf2", "midpoint")
 
     A = system2matrix(lte_equations, [dddynph, Fddynph, y_np1_exact])
     x = A.inv()
