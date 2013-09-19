@@ -92,7 +92,7 @@ def is_rational(x):
         return x.is_rational
     except AttributeError:
         # Otherwise only integer-like objects are rational
-        return math.floor(x) == x
+        return int(x) == x
 
 
 def rational_as_mixed(x):
@@ -126,7 +126,7 @@ def sum_dts(a, b):
     # Deal with non-integer a
     a_int, a_frac = rational_as_mixed(a)
     if a_frac != 0:
-        return a_frac * dts[a_int] + sum_dts(a_int, b)
+        return -a_frac * dts[a_int] + sum_dts(a_int, b)
 
     b_int, b_frac = rational_as_mixed(b)
     if b_frac != 0:
@@ -418,25 +418,36 @@ def test_general_two_predictor_imr_a_bit():
 
 def test_sum_dts():
 
+    # Check a simple fractional case
+    utils.assert_sym_eq(sum_dts(sRat(1,2), 1), dts[0]/2)
+
+    # Check two numbers the same gives zero always
+    utils.assert_sym_eq(sum_dts(1, 1), 0)
+    utils.assert_sym_eq(sum_dts(0, 0), 0)
+    utils.assert_sym_eq(sum_dts(sRat(1,2), sRat(1,2)), 0)
+
+
     def check_sum_dts(a, b):
 
         # Check we can swap the sign
         utils.assert_sym_eq(sum_dts(a, b), -sum_dts(b, a))
 
         # Starting half a step earlier
-        utils.assert_sym_eq(sum_dts(a, b+ sRat(1,2)),
-                            +sRat(1,2)*dts[b] + sum_dts(a, b))
+        utils.assert_sym_eq(sum_dts(a, b + sRat(1,2)),
+                            sRat(1,2)*dts[int(b)] + sum_dts(a, b))
 
         # Check that we can split it up
         utils.assert_sym_eq(sum_dts(a, b),
                             sum_dts(a, b-1) + sum_dts(b-1, b))
 
+    # Make sure b>=1 or the last check will fail due to negative b.
     cases = [(0, 1),
              (5, 8),
              (sRat(1,2), 3),
              (sRat(2,2), 3),
              (sRat(3,2), 3),
-             (0, sRat(4,2)),
+             (0, sRat(9,7)),
+             (sRat(3/4), sRat(9,7)),
              ]
 
     for a, b in cases:
