@@ -146,6 +146,19 @@ def bdf2_step_to_midpoint(ts, ys):
 
     return ode.ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1)
 
+def bdf3_step_to_midpoint(ts, ys):
+
+    dtn = (ts[-1] - ts[-2])/2
+    dtnm1 = ts[-2] - ts[-3]
+    dtnm2 = ts[-3] - ts[-4]
+
+    dynp1 = ode.midpoint_dydt(ts, ys)
+    yn = ys[-2]
+    ynm1 = ys[-3]
+    ynm2 = ys[-4]
+
+    return ode.ibdf3_step(dynp1, dtn, yn, dtnm1, ynm1, dtnm2, ynm2)
+
 
 # Define symbol names
 # ============================================================
@@ -161,17 +174,18 @@ y_np1_imr, y_np1_p2, y_np1_p1 = sympy.symbols('y_0_imr y_0_p2 y_0_p1',
 # ============================================================
 def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
 
-    p_t0, p_t1, p_t2, p_name = scheme
+    time_points, p_name = scheme
 
-    p_dtn = sum_dts(p_t0, p_t1)
-    p_dtnm1 = sum_dts(p_t1, p_t2)
+    p_dtn = sum_dts(time_points[0], time_points[1])
+    p_dtnm1 = sum_dts(time_points[1], time_points[2])
+
 
     # Construct errors and func for dyn estimate
     # ============================================================
 
     if dyn_estimate == "midpoint":
-        assert p_t0 == 0
-        assert p_t1 == sRat(1,2)
+        assert time_points[0] == 0
+        assert time_points[1] == sRat(1,2)
         dyn_error = midpoint_f_approximation_error(dts[0], Fddynph)
         dynm1_error = midpoint_f_approximation_error(dts[1], Fddynph)
         # + higher order terms due to expanding F, ddy from nmh to nph,
@@ -208,7 +222,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
             + ode.ibdf3_step(dyn_error, dts[0]*sRat(1,2), 0,  dts[1], 0, dts[2], 0))
 
         # Function to estimate ynph
-        yn_func = None
+        yn_func = bdf3_step_to_midpoint
     else:
         raise ValueError("Unrecognised yn_estimate name " + yn_estimate)
 
@@ -225,16 +239,16 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
             # error due to bdf2 approximation to midpoint: y
             + ode.ebdf2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
 
-        def p_func():
+        def p_func(ts, ys):
 
             # Only works for tn = t{n+1/2}
-            assert p_t0 == 0
-            assert p_t1 == sRat(1,2)
+            assert time_points[0] == 0
+            assert time_points[1] == sRat(1,2)
             dtn = (ts[-1] - ts[-2])/2
-            dtnm1 = dtn + ts[-2] - ts[-(p_t2+1)]
+            dtnm1 = dtn + ts[-2] - ts[-(time_points[2]+1)]
             #
 
-            ynm1 = ys[-(p_t2+1)]
+            ynm1 = ys[-(time_points[2]+1)]
             dyn = dyn_func(ts, ys)
             yn = yn_func(ts, ys)
             return ode.ebdf2_step(dtn, yn, dyn, dtnm1, ynm1)
@@ -243,7 +257,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     elif p_name == "ab2":
 
         if dyn_estimate == "midpoint":
-            assert p_t2 == sRat(3,2)
+            assert time_points[2] == sRat(3,2)
 
         # Use the same estimate for dyn and dynm1 (except at different
         # points)
@@ -258,13 +272,15 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
             + ode.ab2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
 
 
-        def p_func():
+        def p_func(ts, ys):
 
             # Only works for tn = t{n+1/2}
-            assert p_t0 == 0
-            assert p_t1 == sRat(1,2)
+            assert time_points[0] == 0
+            assert time_points[1] == sRat(1,2)
             dtn = (ts[-1] - ts[-2])/2
-            dtnm1 = dtn + ts[-2] - ts[-(p_t2+1)]
+
+            assert time_points[2] == sRat(3,2)
+            dtnm1 = (ts[-1] - ts[-2])/2 + (ts[-2] - ts[-3])/2
             #
 
             dyn = dyn_func(ts, ys)
@@ -272,14 +288,24 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
             yn = yn_func(ts, ys)
             return ode.ab2_step(dtn, yn, dyn, dtnm1, dynm1)
 
+    # elif p_name == "ebdf3":
+
+    # p_dtnm2 = sum_dts(time_points[2], time_points[3])
+
+    #     y_np1_p_expr = y_np1_exact - (
+    #         # Natural ebdf3 lte (=0)
+    #         ebdf3_lte(p_dtn, p_dtnm1, p_dtnm2, dddynph)
+    #         # Error due to approximation to derivative at tn
+    #         + ode.ebdf3_step(p_dtn, 0, dyn_error, p_dtnm1, 0, p_dtnm2, 0)
+
     else:
         raise ValueError("Unrecognised predictor name " + p_name)
 
     return p_func, y_np1_p_expr
 
 
-def generate_two_predictor_scheme(p1_scheme, p2_scheme, yn_estimate="bdf2",
-                                  dyn_estimate="midpoint"):
+def generate_predictor_pair_scheme(p1_scheme, p2_scheme, yn_estimate,
+                                  dyn_estimate):
     """Generate two-predictor lte system of equations and predictor step
     functions.
     """
@@ -297,28 +323,123 @@ def generate_two_predictor_scheme(p1_scheme, p2_scheme, yn_estimate="bdf2",
     return (y_np1_p1_expr, y_np1_p2_expr, y_np1_imr_expr), (p1_func, p2_func)
 
 
-def main():
+def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
+                                    dynph_approximation):
 
-    p1 = (0, sRat(1,2), 2, "ebdf2")
-    p2 = (0, sRat(1,2), sRat(3,2), "ab2")
     lte_equations, (p1_func, p2_func) \
-      = generate_two_predictor_scheme(p1, p2, "bdf2", "midpoint")
+      = generate_predictor_pair_scheme(p1, p2, ynph_approximation,
+                                       dynph_approximation)
 
     A = system2matrix(lte_equations, [dddynph, Fddynph, y_np1_exact])
     x = A.inv()
-
-    # We can get nice expressions by factorising things (row 2 dotted with
-    # [predictor values] gives us y_np1_exact, I think):
-    print sympy.pretty([xi.factor() for xi in x.row(2)])
 
     # Look at some things for the constant step case:
     cse_print(constify_step(x))
     print sympy.pretty(constify_step(A).det())
 
+    # We can get nice expressions by factorising things (row 2 dotted with
+    # [predictor values] gives us y_np1_exact, I think):
+    exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
+                           zip(x.row(2), [y_np1_p1, y_np1_p2, y_np1_imr])])
+
+    exact_ynp1_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+                                      y_np1_p1, y_np1_p2, y_np1_imr),
+                                      exact_ynp1_symb)
+
+    def lte_est(ts, ys):
+
+        # Compute predicted values
+        y_np1_p1 = p1_func(ts, ys)
+        y_np1_p2 = p2_func(ts, ys)
+
+        y_np1_imr = ys[-1]
+        dtn = ts[-1] - ts[-2]
+        dtnm1 = ts[-2] - ts[-3]
+        dtnm2 = ts[-3] - ts[-4]
+        dtnm3 = ts[-4] - ts[-5]
+
+        # Calculate the exact value (to O(dtn**4))
+        y_np1_exact = exact_ynp1_func(dtn, dtnm1, dtnm2, dtnm3,
+                                      y_np1_p1, y_np1_p2, y_np1_imr)
+
+        # print "%0.16f"%y_np1_imr, "%0.16f"%y_np1_p1, "%0.16f"%y_np1_p2
+        # print y_np1_exact - y_np1_imr
+
+        # Compare with IMR value to get truncation error
+        return y_np1_exact - y_np1_imr
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+    return lte_est
+
+
+# import simpleode.core.example_residuals as er
+# import scipy as sp
+# from matplotlib.pyplot import show as pltshow
+# from matplotlib.pyplot import subplots
+
+# def main():
+
+#     # Function to integrate
+
+#     # residual = er.exp_residual
+#     # exact = er.exp_exact
+
+#     residual = par(er.damped_oscillation_residual, 1, 0)
+#     exact = par(er.damped_oscillation_exact, 1, 0)
+
+#     # method
+#     lte_est = generate_predictor_pair((0, sRat(1,2), 2, "ebdf2"),
+#                                       (0, sRat(1,2), sRat(3,2), "ab2"),
+#                                       "bdf3",
+#                                       "midpoint")
+#     my_adaptor = par(ode.general_time_adaptor, lte_calculator=lte_est,
+#                       method_order=2)
+#     init_actions = par(ode.higher_order_start, 6)
+
+#     # Do it
+#     ys, ts = ode._odeint(residual, [sp.array(exact(0.0), ndmin=1)], [0.0],
+#                          1e-4, 5.0, ode.midpoint_residual,
+#                          1e-6, my_adaptor, init_actions)
+
+#     # Plot
+
+#     # Get errors + exact solution
+#     exacts = map(exact, ts)
+#     errors = [sp.linalg.norm(y - ex, 2) for y, ex in zip(ys, exacts)]
+
+
+#     fig, axes = subplots(4, 1, sharex=True)
+#     dt_axis=axes[1]
+#     result_axis=axes[0]
+#     exact_axis=axes[2]
+#     error_axis=axes[3]
+#     method_name = "w18 lte est midpoint"
+#     if exact_axis is not None:
+#         exact_axis.plot(ts, exacts, label=method_name)
+#         exact_axis.set_xlabel('$t$')
+#         exact_axis.set_ylabel('$y(t)$')
+
+#     if error_axis is not None:
+#         error_axis.plot(ts, errors, label=method_name)
+#         error_axis.set_xlabel('$t$')
+#         error_axis.set_ylabel('$||y(t) - y_n||_2$')
+
+#     if dt_axis is not None:
+#         dt_axis.plot(ts[1:], utils.ts2dts(ts),
+#                      label=method_name)
+#         dt_axis.set_xlabel('$t$')
+#         dt_axis.set_ylabel('$\Delta_n$')
+
+
+#     if result_axis is not None:
+#         result_axis.plot(ts, ys, label=method_name)
+#         result_axis.set_xlabel('$t$')
+#         result_axis.set_ylabel('$y_n$')
+
+#     pltshow()
+
+# if __name__ == '__main__':
+#     sys.exit(main())
 
 
 # Tests
@@ -390,30 +511,35 @@ import scipy as sp
 #     assert utils.partial_lists(ts, n) != []
 
 
-def test_dddy_estimates():
+# def test_dddy_estimates():
 
-        #
-    t = sympy.symbols('t')
+#         #
+#     t = sympy.symbols('t')
 
-    equations = [
-        3*t**3,
-        sympy.tanh(t),
-        sympy.exp(-t)
-        ]
-
-
-    for exact_symb in equations:
-         yield check_dddy_estimates, exact_symb
+#     equations = [
+#         3*t**3,
+#         sympy.tanh(t),
+#         sympy.exp(-t)
+#         ]
 
 
-def test_general_two_predictor_imr_a_bit():
-    # Check the we generate imr's lte if we plug in the right times.
-    p1_steps = (0, sRat(1,2), 1)
-    p2_steps = (0, sRat(1,2), 1)
-    lte_equations, (p1_func, p2_func) = general_two_predictor(p1_steps, p2_steps)
+#     for exact_symb in equations:
+#          yield check_dddy_estimates, exact_symb
 
-    utils.assert_sym_eq(lte_equations[0], lte_equations[2])
-    utils.assert_sym_eq(lte_equations[1], lte_equations[2])
+
+def test_generate_predictor_scheme_a_bit():
+
+    # Check the we generate imr's lte if we plug in the right times and
+    # approximations to ebdf2 (~explicit midpoint rule).
+    _, p_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
+                                              "bdf2", "midpoint")
+
+    _, p2_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
+                                              "bdf3", "midpoint")
+
+    utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p_lte)
+    utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p2_lte)
+
 
 
 def test_sum_dts():

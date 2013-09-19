@@ -159,6 +159,19 @@ def _timestep_scheme_factory(method):
                       method_order=2)
         return midpoint_residual, adaptor, par(higher_order_start, 5)
 
+    elif label == 'midpoint w18':
+        import simpleode.algebra.two_predictor as tp
+        p1 = _method_dict['p1']
+        p2 = _method_dict['p2']
+        ynph_approximation = _method_dict.get('ynph_approx', "bdf2")
+        dynph_approximation = _method_dict.get('dynph_approx', "midpoint")
+        lte_est = tp.generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
+                                                     dynph_approximation)
+        adaptor = par(general_time_adaptor,
+                      lte_calculator=lte_est,
+                      method_order=2)
+        return midpoint_residual, adaptor, par(higher_order_start, 5)
+
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
         # getting derivatives of y from implicit formulas we need an extra
