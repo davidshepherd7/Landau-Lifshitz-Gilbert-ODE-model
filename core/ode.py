@@ -38,8 +38,6 @@ MAX_ALLOWED_TIMESTEP = 1e8
 # Make arguments and order consistent: ts, ys, dys, others. Including
 # stepper functions!
 
-# Rename order->n_start in higher order starts
-
 
 # Data storage notes
 # ============================================================
@@ -211,12 +209,12 @@ def _timestep_scheme_factory(method):
         raise ValueError(message)
 
 
-def higher_order_start(order, func, ys, ts):
+def higher_order_start(n_start, func, ys, ts):
     """ Run a few steps of imr with a very small timestep.
     Useful for generating extra initial data for multi-step methods.
     """
     starting_dt = 1e-6
-    while len(ys) < order:
+    while len(ys) < n_start:
         ys, ts = _odeint(func, ys, ts, starting_dt, ts[-1] + starting_dt,
                          imr_residual)
     return ys, ts
@@ -325,9 +323,9 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
     return ys, ts
 
 
-def higher_order_explicit_start(order, func, ts, ys):
+def higher_order_explicit_start(n_start, func, ts, ys):
     starting_dt = 1e-6
-    while len(ys) < order:
+    while len(ys) < n_start:
         ys, ts = _odeint_explicit(func, ts, ys, starting_dt,
                                   ts[-1] + starting_dt,
                                   emr_step)
