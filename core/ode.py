@@ -30,14 +30,6 @@ MIN_ALLOWED_TIMESTEP = 1e-8
 MAX_ALLOWED_TIMESTEP = 1e8
 
 
-# TODO:
-
-# Move time adaptivity try/except into general_time_adaptor, use
-# general_time_adaptor everywhere.
-
-# Make arguments and order consistent: ts, ys, dys, others. Including
-# stepper functions!
-
 
 # Data storage notes
 # ============================================================
@@ -264,6 +256,7 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
 def _odeint(func, ts, ys, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
             initialisation_actions=None, actions_after_timestep=None,
+            newton_failure_reduce_step=False,
             **kwargs):
     """Underlying function for odeint.
     """
@@ -288,10 +281,18 @@ def _odeint(func, ts, ys, dt, tmax, time_residual,
         try:
             y_np1 = newton(residual, ys[-1], **kwargs)
         except sp.optimize.nonlin.NoConvergence:
-            dt = scale_timestep(dt, None, None, None,
-                                scaling_function=failed_timestep_scaling)
-            sys.stderr.write("Failed to converge, reducing time step.\n")
-            continue
+
+            # If we are doing adaptive stepping (or overide allowing the
+            # step to be reduced) then reduce the step and try again.
+            if (time_adaptor is not None) or newton_failure_reduce_step:
+                dt = scale_timestep(dt, None, None, None,
+                                    scaling_function=failed_timestep_scaling)
+                sys.stderr.write("Failed to converge, reducing time step.\n")
+                continue
+
+            # Otherwise don't do anything (re-raise the exception).
+            else:
+                raise
 
         # Execute any post-step actions requested (e.g. renormalisation,
         # simplified mid-point method update).
