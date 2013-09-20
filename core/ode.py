@@ -40,8 +40,6 @@ MAX_ALLOWED_TIMESTEP = 1e8
 
 # Rename order->n_start in higher order starts
 
-# Change current emr to ebdf2
-
 
 # Data storage notes
 # ============================================================
@@ -127,10 +125,10 @@ def _timestep_scheme_factory(method):
     elif label == 'bdf1':
         return bdf1_residual, None, None
 
-    elif label == 'midpoint':
-        return midpoint_residual, None, None
+    elif label == 'imr':
+        return imr_residual, None, None
 
-    elif label == 'midpoint ab':
+    elif label == 'imr ab':
         # Get values from dict (with defaults if not set).
         n_start = _method_dict.get('n_start', 2)
         ab_start = _method_dict.get('ab_start_point', 't_n')
@@ -143,32 +141,32 @@ def _timestep_scheme_factory(method):
                                       use_y_np1_in_interp=use_y_np1_in_interp))
 
         adaptor = par(general_time_adaptor,
-                      lte_calculator=midpoint_ab_lte_estimate,
+                      lte_calculator=imr_ab_lte_estimate,
                       method_order=2,
                       ab_start_point=ab_start,
                       interpolator=interp,
                       explicit_derivative=explicit_derivative,
                       fudge_factor=fudge_factor)
 
-        return midpoint_residual, adaptor, par(higher_order_start, n_start)
+        return imr_residual, adaptor, par(higher_order_start, n_start)
 
-    elif label == 'midpoint ebdf3':
+    elif label == 'imr ebdf3':
         dydt_func = _method_dict.get('dydt_func', None)
         lte_est = par(ebdf3_lte_estimate, dydt_func=dydt_func)
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 5)
+        return imr_residual, adaptor, par(higher_order_start, 5)
 
-    elif label == 'midpoint ebdf3dynm1':
+    elif label == 'imr ebdf3dynm1':
         dydt_func = _method_dict.get('dydt_func', None)
         lte_est = par(ebdf3_dynm1_lte_estimate, dydt_func=dydt_func)
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 5)
+        return imr_residual, adaptor, par(higher_order_start, 5)
 
-    elif label == 'midpoint f13':
+    elif label == 'imr f13':
 
         F_func = _method_dict.get('F_func', None)
 
@@ -176,20 +174,20 @@ def _timestep_scheme_factory(method):
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 5)
+        return imr_residual, adaptor, par(higher_order_start, 5)
 
-    elif label == 'midpoint w18':
+    elif label == 'imr w18':
         import simpleode.algebra.two_predictor as tp
         p1 = _method_dict['p1']
         p2 = _method_dict['p2']
         ynph_approximation = _method_dict.get('ynph_approx', "bdf2")
-        dynph_approximation = _method_dict.get('dynph_approx', "midpoint")
+        dynph_approximation = _method_dict.get('dynph_approx', "imr")
         lte_est = tp.generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
                                                      dynph_approximation)
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return midpoint_residual, adaptor, par(higher_order_start, 5)
+        return imr_residual, adaptor, par(higher_order_start, 5)
 
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
@@ -214,13 +212,13 @@ def _timestep_scheme_factory(method):
 
 
 def higher_order_start(order, func, ys, ts):
-    """ Run a few steps of midpoint method with a very small timestep.
+    """ Run a few steps of imr with a very small timestep.
     Useful for generating extra initial data for multi-step methods.
     """
     starting_dt = 1e-6
     while len(ys) < order:
         ys, ts = _odeint(func, ys, ts, starting_dt, ts[-1] + starting_dt,
-                         midpoint_residual)
+                         imr_residual)
     return ys, ts
 
 
@@ -519,13 +517,13 @@ def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
     return dy_nmh, y_nph, dy_nph, ddy_nph, dy_n
 
 
-def midpoint_approximation_fake_interpolation(ts, ys):
-    # Just use midpoint approximation for "interpolation"!
+def imr_approximation_fake_interpolation(ts, ys):
+    # Just use imr approximation for "interpolation"!
 
     dt_n = (ts[-1] + ts[-2])/2
     dt_nm1 = (ts[-2] + ts[-3])/2
 
-    # Use midpoint average approximations
+    # Use imr average approximations
     y_nph = (ys[-1] + ys[-2])/2
     dy_nph = (ys[-1] - ys[-2])/dt_n
     dy_nmh = (ys[-2] - ys[-3])/dt_nm1
@@ -621,22 +619,20 @@ def ebdf3_dynm1_step(ts, ys, dynm1):
     return dynm1*(-dtn**3*dtnm1**2*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + yn*(dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm1*(dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm2*(-dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3))
 
 
-def midpoint_residual(base_residual, ts, ys):
+def imr_residual(base_residual, ts, ys):
     dt_n = ts[-1] - ts[-2]
     y_n = ys[-2]
     y_np1 = ys[-1]
 
     y_nph = sp.array((y_np1 + y_n) * 0.5)
     t_nph = (ts[-1] + ts[-2]) * 0.5
-    dydt_nph = midpoint_dydt(ts, ys)
+    dydt_nph = imr_dydt(ts, ys)
 
     return base_residual(t_nph, y_nph, dydt_nph)
 
 
-def midpoint_dydt(ts, ys):
-    """Get dy/dt at the midpoint,
-
-    time = (ts[-1] + ts[-2])/ 2.
+def imr_dydt(ts, ys):
+    """Get dy/dt at the midpoint as used by imr.
     """
     dt_n = ts[-1] - ts[-2]
     y_n = ys[-2]
@@ -658,12 +654,12 @@ def interpolate_dyn(ts, ys):
     dts = utils.ts2dts(ts)
 
     # double check steps match
-    midpoint_ts = map(lambda tn, tnp1: (tn + tnp1)/2, ts[1:], ts[:-1])
-    midpoint_dys = map(lambda dt, ynp1, yn: (ynp1 -yn)/dt,
+    imr_ts = map(lambda tn, tnp1: (tn + tnp1)/2, ts[1:], ts[:-1])
+    imr_dys = map(lambda dt, ynp1, yn: (ynp1 -yn)/dt,
                        dts, ynp1_list, yn_list)
 
     dyn = (sp.interpolate.barycentric_interpolate
-           (midpoint_ts, midpoint_dys, ts[-2]))
+           (imr_ts, imr_dys, ts[-2]))
 
     return dyn
 
@@ -769,7 +765,7 @@ class TrapezoidRuleResidual(object):
             self.dys.append(dy_n)
 
     def _get_initial_dy(self, base_residual, ts, ys):
-        """Calculate a step with midpoint to get dydt at y_n.
+        """Calculate a step with imr to get dydt at y_n.
         """
 
         # We want to ignore the most recent two steps (the one being solved
@@ -780,18 +776,18 @@ class TrapezoidRuleResidual(object):
         temp_ys = copy.deepcopy(ys[:-2])
 
         # Timestep should be double the timestep used for the previous
-        # step, so that the midpoint is at y_n.
+        # step, so that the imr is at y_n.
         dt_n = 2*(ts[-2] - ts[-3])
 
         # Calculate time step
         temp_ys, temp_ts = _odeint(base_residual, temp_ys, temp_ts, dt_n,
-                                   temp_ts[-1] + dt_n, midpoint_residual)
+                                   temp_ts[-1] + dt_n, imr_residual)
 
         # Check that we got the right times: the midpoint should be at
         # the step before the most recent time.
         utils.assert_almost_equal((temp_ts[-1] + temp_ts[-2])/2, ts[-2])
 
-        # Now invert midpoint to get the derivative
+        # Now invert imr to get the derivative
         dy_nph = (temp_ys[-1] - temp_ys[-2])/dt_n
 
         # Fill in dummys (as many as we have y values) followed by the
@@ -993,7 +989,7 @@ def tr_ab_lte_estimate(ts, ys, dydt_func):
     return lte_est
 
 
-def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
+def imr_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
     """
     See notes: 7/2/2013 for the algebra on calculating the AB2
     solution. See "mathematica_adaptive_midpoint.m for algebra to get a
@@ -1007,7 +1003,7 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
     t_nph = (ts[-1] + ts[-2])/2
 
-    dy_nmh, y_nph, dy_nph, ddy_nph = midpoint_approximation_fake_interpolation(
+    dy_nmh, y_nph, dy_nph, ddy_nph = imr_approximation_fake_interpolation(
         ts, ys)
 
     # Get explicit adams-bashforth 2 solution (variable timestep -- uses
@@ -1047,7 +1043,7 @@ def midpoint_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
 
 
 
-def midpoint_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
+def imr_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
                              ab_start_point='t_n',
                              explicit_derivative=None,
                              fudge_factor=1.0):
@@ -1137,17 +1133,17 @@ def midpoint_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
     # Calculate with a choice of start points (see notes)
     if ab_start_point == 't_nmh':
         p = -4 / (1 + 3/dtr)
-        midpoint_lte = ymid_estimation_error + \
+        imr_lte = ymid_estimation_error + \
           p * (y_np1_AB2 - y_np1_MP - ymid_estimation_error)
 
     elif ab_start_point == 't_n':
-        midpoint_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
+        imr_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
 
     else:
         err = "Don't recognise ab_start_point value "+str(ab_start_point)
         raise ValueError(err)
 
-    return midpoint_lte * fudge_factor
+    return imr_lte * fudge_factor
 
 
 def ebdf3_lte_estimate(ts, ys, dydt_func=None):
@@ -1169,20 +1165,20 @@ def ebdf3_lte_estimate(ts, ys, dydt_func=None):
 
 def ebdf3_dynm1_lte_estimate(ts, ys, dydt_func=None):
     """Estimate lte for with the third order explicit bdf method w/
-    derivative point at y_{n-1}. Useful for midpoint?
+    derivative point at y_{n-1}. Useful for imr?
     """
 
     # Use BDF approximation to dyn if no function given
     if dydt_func is None:
-        # assuming midpoint method is the real timestepper
-        dynm1 = midpoint_dydt(ts[:-1], ys[:-1]) - midpoint_dydt(ts[:-2], ys[:-2])
+        # assuming imr is the real timestepper
+        dynm1 = imr_dydt(ts[:-1], ys[:-1]) - imr_dydt(ts[:-2], ys[:-2])
     else:
         dynm1 = dydt_func(ts[-3], ys[-3])
 
         # # debugging ??ds
         # dtn = ts[-1] - ts[-2]
         # err_margin = 25* dtn**2
-        # est_dynm1 = (midpoint_dydt(ts[:-1], ys[:-1]) - midpoint_dydt(ts[:-2], ys[:-2]))/2
+        # est_dynm1 = (imr_dydt(ts[:-1], ys[:-1]) - imr_dydt(ts[:-2], ys[:-2]))/2
         # if not utils.almost_equal(dynm1, est_dynm1, err_margin):
         #     print
         #     print dynm1
@@ -1194,7 +1190,7 @@ def ebdf3_dynm1_lte_estimate(ts, ys, dydt_func=None):
     return ys[-1] - y_np1_EBDF3
 
 
-def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
+def imr_fe_ab_time_adaptor(ts, ys, target_error,
                                 interpolator=my_interpolate):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
@@ -1227,7 +1223,7 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
 
     # Use a forward Euler predictor to eliminate the Jacobian term
     # ============================================================
-    # Forward Euler with exact initial y and approximate midpoint
+    # Forward Euler with exact initial y and approximate imr
     # derivative.
     y_np1_FE = y_nph + (dt_n/2) * dy_nmid
 
@@ -1247,11 +1243,11 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
     y_np1_FEc = (y_np1_FE + ((dt_n**2)/4) * ddy_nph)
 
     # Calculate the lte (see notes for why this equation)
-    midpoint_lte = (omega_n * (y_np1_MP - y_np1_AB2)
+    imr_lte = (omega_n * (y_np1_MP - y_np1_AB2)
                     + ((omega_n - 1)/2) * (y_np1_FEc - y_np1_MP))
 
     # Get a norm
-    error_norm = sp.linalg.norm(sp.array(midpoint_lte, ndmin=1), 2)
+    error_norm = sp.linalg.norm(sp.array(imr_lte, ndmin=1), 2)
 
     # Return the scaled timestep (with lots of checks).
     return scale_timestep(dt_n, target_error, error_norm, 3)
@@ -1260,9 +1256,9 @@ def midpoint_fe_ab_time_adaptor(ts, ys, target_error,
 # Scheme from friday 13th-ish
 # ============================================================
 
-def f13_f_hat_midpoint(ts, ys_est):
-    """Extract derivative approximation used by midpoint method from
-    y-values output by midpoint method.
+def f13_f_hat_imr(ts, ys_est):
+    """Extract derivative approximation used by imr from
+    y-values output by imr.
     """
     dtn = ts[-1] - ts[-2]
     return (ys_est[-1] - ys_est[-2])/dtn
@@ -1270,8 +1266,8 @@ def f13_f_hat_midpoint(ts, ys_est):
 
 def f13_lte_est(ts, ys, F_func):
 
-    f_hat_nph = f13_f_hat_midpoint(ts, ys)
-    f_hat_nmh = f13_f_hat_midpoint(ts[:-1], ys[:-1])
+    f_hat_nph = f13_f_hat_imr(ts, ys)
+    f_hat_nmh = f13_f_hat_imr(ts[:-1], ys[:-1])
 
     dtn = ts[-1] - ts[-2]
     dtnm1 = ts[-2] - ts[-3]
@@ -1414,7 +1410,7 @@ def test_dydt_calcs():
 
     dydt_calculators = [(bdf2_dydt, 2),
                         (bdf3_dydt, 3),
-                        (midpoint_dydt, 1),
+                        (imr_dydt, 1),
                         ]
     dts = [0.1, 0.01, 0.001]
 
@@ -1443,7 +1439,7 @@ def test_exp_timesteppers():
     # List of test parameters
     methods = [('bdf2', 1e-5),
                ('bdf1', 1e-2),  # First order method...
-               ('midpoint', 1e-5),
+               ('imr', 1e-5),
                ('trapezoid', 1e-5),
                ]
 
@@ -1468,7 +1464,7 @@ def test_vector_timesteppers():
     # List of test parameters
     methods = [('bdf2', [1e-4, 1e-4]),
                ('bdf1', [1e-2, 1e-2]),  # First order methods suck...
-               ('midpoint', [1e-4, 1e-4]),
+               ('imr', [1e-4, 1e-4]),
                ('trapezoid', [1e-4, 1e-4]),
                ]
 
@@ -1480,10 +1476,10 @@ def test_vector_timesteppers():
 def test_adaptive_dt():
 
     methods = [('bdf2 mp', 1e-4),
-               # ('midpoint fe ab', 1e-4),
-               # ('midpoint ab', 1e-4),
-               ('midpoint ebdf3', 1e-5), # test with and without explicit f
-               ({'label':'midpoint ebdf3'}, 1e-5),
+               # ('imr fe ab', 1e-4),
+               # ('imr ab', 1e-4),
+               ('imr ebdf3', 1e-5), # test with and without explicit f
+               ({'label':'imr ebdf3'}, 1e-5),
                ({'label':'tr ab'}, 1e-4),
                ]
 
@@ -1520,11 +1516,11 @@ def test_sharp_dt_change():
     exact = par(tanh_exact, alpha=alpha, step_time=step_time)
 
     # Run it
-    return check_problem('midpoint ab', residual, exact, tol=tol)
+    return check_problem('imr ab', residual, exact, tol=tol)
 
 
 # def test_with_stiff_problem():
-#     """Check that midpoint fe ab works well for stiff problem (i.e. has a
+#     """Check that imr fe ab works well for stiff problem (i.e. has a
 #     non-insane number of time steps).
 #     """
 #     # Slow test!
@@ -1533,7 +1529,7 @@ def test_sharp_dt_change():
 #     residual = par(van_der_pol_residual, mu=mu)
 
 #     ys, ts = odeint(residual, [2.0, 0], 1000.0, dt=1e-6,
-#                     method='midpoint ab', target_error=1e-3)
+#                     method='imr ab', target_error=1e-3)
 
 #     print len(ts)
 #     plt.plot(ts, [y[0] for y in ys])

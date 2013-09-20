@@ -54,7 +54,7 @@ def ab2_lte(dtn, dtnm1, dddyn):
     return (2 + 3*dtnm1/dtn) * dtn**3 * dddyn/12
 
 
-def midpoint_f_approximation_error(dtn, Fddynph):
+def imr_f_approximation_error(dtn, Fddynph):
     return -dtn**2*Fddynph/8
 
 
@@ -140,7 +140,7 @@ def bdf2_step_to_midpoint(ts, ys):
     dtn = (ts[-1] - ts[-2])/2
     dtnm1 = ts[-2] - ts[-3]
 
-    dynp1 = ode.midpoint_dydt(ts, ys)
+    dynp1 = ode.imr_dydt(ts, ys)
     yn = ys[-2]
     ynm1 = ys[-3]
 
@@ -152,7 +152,7 @@ def bdf3_step_to_midpoint(ts, ys):
     dtnm1 = ts[-2] - ts[-3]
     dtnm2 = ts[-3] - ts[-4]
 
-    dynp1 = ode.midpoint_dydt(ts, ys)
+    dynp1 = ode.imr_dydt(ts, ys)
     yn = ys[-2]
     ynm1 = ys[-3]
     ynm2 = ys[-4]
@@ -183,15 +183,15 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     # Construct errors and func for dyn estimate
     # ============================================================
 
-    if dyn_estimate == "midpoint":
+    if dyn_estimate == "imr":
         assert time_points[0] == 0
         assert time_points[1] == sRat(1,2)
-        dyn_error = midpoint_f_approximation_error(dts[0], Fddynph)
-        dynm1_error = midpoint_f_approximation_error(dts[1], Fddynph)
+        dyn_error = imr_f_approximation_error(dts[0], Fddynph)
+        dynm1_error = imr_f_approximation_error(dts[1], Fddynph)
         # + higher order terms due to expanding F, ddy from nmh to nph,
         # luckily for us these end up in O(dtn**4).
 
-        dyn_func = ode.midpoint_dydt
+        dyn_func = ode.imr_dydt
 
     else:
         raise ValueError("Unrecognised dyn_estimate name " + dyn_estimate)
@@ -201,7 +201,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     # ============================================================
 
     if yn_estimate == "bdf2":
-        # Error on y_nph as calculated by BDF2 using midpoint approximation for
+        # Error on y_nph as calculated by BDF2 using imr approximation for
         # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1
         yn_error = (
             # Natural bdf2 lte:
@@ -213,7 +213,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
         yn_func = bdf2_step_to_midpoint
 
     elif yn_estimate == "bdf3":
-        # Error on y_nph as calculated by BDF2 using midpoint approximation for
+        # Error on y_nph as calculated by BDF2 using imr approximation for
         # dy_nph, tnp1 = tnph, tn = tn, tnm1 = tnm1, tnm2 = tnm2
         yn_error = (
             # Natural bdf2 lte:
@@ -256,7 +256,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
 
     elif p_name == "ab2":
 
-        if dyn_estimate == "midpoint":
+        if dyn_estimate == "imr":
             assert time_points[2] == sRat(3,2)
 
         # Use the same estimate for dyn and dynm1 (except at different
@@ -413,7 +413,7 @@ def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
 #     result_axis=axes[0]
 #     exact_axis=axes[2]
 #     error_axis=axes[3]
-#     method_name = "w18 lte est midpoint"
+#     method_name = "w18 lte est imr"
 #     if exact_axis is not None:
 #         exact_axis.plot(ts, exacts, label=method_name)
 #         exact_axis.set_xlabel('$t$')
@@ -470,9 +470,9 @@ import operator as op
 #     print dfdy_symb, ddy_symb
 
 
-#     # Solve with midpoint
+#     # Solve with imr
 #     est_ys, ts = ode.odeint(residual, exact(0.0), dt=dt,
-#                             tmax=3.0, method='midpoint',
+#                             tmax=3.0, method='imr',
 #                             newton_tol=1e-10, jacobian_fd_eps=1e-12)
 
 #     # Construct predictors
@@ -533,10 +533,10 @@ def test_generate_predictor_scheme_a_bit():
     # Check the we generate imr's lte if we plug in the right times and
     # approximations to ebdf2 (~explicit midpoint rule).
     _, p_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
-                                              "bdf2", "midpoint")
+                                              "bdf2", "imr")
 
     _, p2_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
-                                              "bdf3", "midpoint")
+                                              "bdf3", "imr")
 
     utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p_lte)
     utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p2_lte)
@@ -645,8 +645,8 @@ def test_ltes():
         map(par(utils.assert_same_order_of_magnitude, fp_zero=z),
             exact_ltes, error_diff_ltes)
 
-        # For checking midpoint method in more detail on J!=0 cases
-        # if method_residual is ode.midpoint_residual:
+        # For checking imr in more detail on J!=0 cases
+        # if method_residual is ode.imr_residual:
         #     if J(1,2) != 0:
         #         assert False
 
@@ -661,7 +661,7 @@ def test_ltes():
                  ]
 
     methods = [
-        (ode.midpoint_residual, True,
+        (ode.imr_residual, True,
          lambda dtn, _, _1, dddyn, Fddy: imr_lte(dtn, dddyn, Fddy)
          ),
 
