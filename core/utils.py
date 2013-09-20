@@ -261,6 +261,41 @@ def assert_polar_in_range(sph):
     assert(sph.pol >= 0 and sph.pol <= pi)
 
 
+# Convert symbolic expressions to useful python functions
+# ============================================================
+
+def symb2deriv(exact_symb, order):
+    t, y, Dy = sympy.symbols('t y Dy')
+    deriv_symb = sympy.diff(exact_symb, t, order).subs(exact_symb, y)
+    deriv = sympy.lambdify((t, y), deriv_symb)
+    return deriv
+
+
+def symb2residual(exact_symb):
+    t, y, Dy = sympy.symbols('t y Dy')
+    dydt_symb = sympy.diff(exact_symb, t, 1).subs(exact_symb, y)
+    residual_symb = Dy - dydt_symb
+    residual = sympy.lambdify((t, y, Dy), residual_symb)
+    return residual
+
+
+def symb2jacobian(exact_symb):
+    t, y, Dy = sympy.symbols('t y Dy')
+    dydt_symb = sympy.diff(exact_symb, t, 1).subs(exact_symb, y)
+    jacobian_symb = sympy.diff(dydt_symb, y, 1).subs(exact_symb, y)
+    jacobian = sympy.lambdify((t, y), jacobian_symb)
+    return jacobian
+
+
+def symb2functions(exact_symb):
+    t, y, Dy = sympy.symbols('t y Dy')
+    exact = sympy.lambdify(t, exact_symb)
+    residual = symb2residual(exact_symb)
+    dys = [None]+map(par(symb2deriv, exact_symb), range(1,10))
+    jacobian = symb2jacobian(exact_symb)
+    return exact, residual, dys, jacobian
+
+
 # Coordinate systems
 # ============================================================
 
