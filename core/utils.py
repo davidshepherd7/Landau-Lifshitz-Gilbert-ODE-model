@@ -9,6 +9,7 @@ import itertools as it
 import operator as op
 import functools as ft
 import sympy
+import math
 
 from functools import partial as par
 from os.path import join as pjoin
@@ -159,10 +160,29 @@ def list_almost_equal(list_a, list_b, tol=1e-9):
     return list_almost_zero(abs_list_diff(list_a, list_b), tol)
 
 
+def same_order_of_magnitude(a, b, fp_zero):
+    if abs(a) < fp_zero or abs(b) < fp_zero:
+        return abs(a) < fp_zero and abs(b) < fp_zero
+    else:
+        return (abs(sp.log10(abs(a)) - sp.log10(abs(b))) < 1)
+
+
+def same_sign(a, b, fp_zero):
+    """Check if two floats (or probably fine for other numbers) have the
+    same sign. Throw an error on NaN values. Treat small floats as zero and
+    treat zero as not having a sign.
+    """
+    if (a == sp.NaN) or (b == sp.NaN):
+        raise ValueError("NaN(s) passed to sign comparison functions")
+    elif (abs(a) < fp_zero) and (abs(b) < fp_zero):
+        return True
+    else:
+        return math.copysign(1, a) == math.copysign(1, b)
+
+
 # Some useful asserts. We explicitly use the assert command in each
-# (instead of defining the almost equal commands in terms of each
-# other) to make sure we get useful output from nose -d.
-# ??ds fix the names to use _ and lower case?
+# (instead of defining the asserts in terms of the bool-returning functions
+# above) to get useful output from nose -d.
 def assert_almost_equal(a, b, tol=1e-9):
     assert(abs(a - b) < tol)
 
@@ -206,6 +226,29 @@ def assert_sym_eq(a, b):
 
     # Try to simplify the difference to zero
     assert (my_simp(a - b) == 0)
+
+
+def assert_same_sign(a, b, fp_zero=1e-9):
+    if (a == sp.NaN) or (b == sp.NaN):
+        raise ValueError("NaN(s) passed to sign comparison functions")
+    elif (abs(a) < fp_zero) and (abs(b) < fp_zero):
+        assert True
+    else:
+        assert math.copysign(1, a) == math.copysign(1, b)
+
+
+def assert_same_order_of_magnitude(a, b, fp_zero=1e-14):
+    """Check that log10(abs(.)) are nearby for a and b. If a or b is below
+    fp_zero then the other is checked in the same way for closeness to
+    fp_zero (after checking that it is not also below fp_zero, for safety
+    with log10).
+    """
+    if abs(a) < fp_zero:
+        assert abs(b) < fp_zero or (sp.log10(abs(b)) - sp.log10(abs(fp_zero)) < 1)
+    if abs(b) < fp_zero:
+        assert abs(a) < fp_zero or (sp.log10(abs(a)) - sp.log10(abs(fp_zero)) < 1)
+    else:
+        assert (abs(sp.log10(abs(a)) - sp.log10(abs(b))) < 1)
 
 
 # Spherical polar coordinates asserts
