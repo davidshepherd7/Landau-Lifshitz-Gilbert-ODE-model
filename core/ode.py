@@ -9,11 +9,14 @@ import functools as ft
 import itertools as it
 import copy
 import sys
+import random
+import sympy
 
 from math import sin, cos, tan, log, atan2, acos, pi, sqrt, exp
 from scipy.interpolate import krogh_interpolate
 from scipy.linalg import norm
 from functools import partial as par
+
 
 import simpleode.core.utils as utils
 
@@ -26,6 +29,18 @@ TIMESTEP_FAILURE_DT_SCALING_FACTOR = 0.5
 MIN_ALLOWED_TIMESTEP = 1e-8
 MAX_ALLOWED_TIMESTEP = 1e8
 
+
+# TODO:
+
+# Move time adaptivity try/except into general_time_adaptor, use
+# general_time_adaptor everywhere.
+
+# Make arguments and order consistent: ts, ys, dys, others. Including
+# stepper functions!
+
+# Rename order->n_start in higher order starts
+
+# Change current emr to ebdf2
 
 # Data storage notes
 # ============================================================
@@ -90,6 +105,9 @@ def _timestep_scheme_factory(method):
 
     if label == 'bdf2':
         return bdf2_residual, None, par(higher_order_start, 2)
+
+    elif label == 'bdf3':
+        return bdf3_residual, None, par(higher_order_start, 3)
 
     elif label == 'bdf2 mp':
         adaptor = par(general_time_adaptor,
@@ -308,24 +326,110 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
     return ys, ts
 
 
+def higher_order_explicit_start(order, func, ts, ys):
+    starting_dt = 1e-6
+    while len(ys) < order:
+        ys, ts = _odeint_explicit(func, ts, ys, starting_dt,
+                                  ts[-1] + starting_dt,
+                                  real_emr_step)
+
+    return ts, ys
+
+
+def odeint_explicit(func, y0, dt, tmax, method='ab2', time_adaptor=None,
+                    target_error=None, **kwargs):
+    """Fairly naive implementation of constant step explicit time stepping
+    for linear odes.
+    """
+    # Set up starting values
+    ts = [0.0]
+    ys = [sp.array([y0], ndmin=1)]
+
+    if method == 'ab2':
+        def wrapped_ab2(ts, ys, func):
+            return ab2_step(ts[-1] - ts[-2], ys[-2], func(ts[-2], ys[-2]),
+                            ts[-2] - ts[-3], func(ts[-3], ys[-3]))
+
+        stepper = wrapped_ab2
+        n_start = 2
+
+    elif method == "ebdf2":
+        def wrapped_ebdf2(ts, ys, func):
+            return ebdf2_step(ts[-1] - ts[-2], ts[-2], func(ts[-2], ys[-2]),
+                              ts[-2] - ts[-3], ys[-3])
+        stepper = wrapped_ebdf2
+        n_start = 2
+
+    elif method == "ebdf3":
+        def wrapped_ebdf3(ts, ys, func):
+            return ebdf3_step(ts[-1] - ts[-2], ys[-2], func(ts[-2], ys[-2]),
+                              ts[-2] - ts[-3], ys[-3],
+                              ts[-3] - ts[-4], ys[-4])
+        stepper = wrapped_ebdf3
+        n_start = 3
+
+    else:
+        raise NotImplementedError("method "+method+" not implement (yet?)")
+
+
+    # Generate enough values to start the main method (using emr)
+    ts, ys = higher_order_explicit_start(n_start, func, ts, ys)
+
+    # Call the real stepping function
+    return _odeint_explicit(func, ts, ys, dt, tmax, stepper, time_adaptor)
+
+
+def _odeint_explicit(func, ts, ys, dt, tmax,
+                     stepper, target_error=None, time_adaptor=None):
+
+    while ts[-1] < tmax:
+
+        # Step (note: to be similar to implicit code pass dummy value of
+        # ynp1 into stepper)
+        t_np1 = ts[-1] + dt
+        y_np1 = stepper(ts+[t_np1], ys+[None], func)
+
+        # Calculate the next value of dt if needed
+        if time_adaptor is not None:
+            try:
+                dt = time_adaptor(ts+[t_np1], ys+[y_np1], target_error)
+
+            # If the scaling factor is too small then don't store this
+            # timestep, instead repeat it with the new step size.
+            except FailedTimestepError, exception_data:
+                sys.stderr.write('Rejected time step\n')
+                dt = exception_data.new_dt
+                continue
+
+        # Store values
+        ys.append(y_np1)
+        ts.append(t_np1)
+
+    return ys, ts
+
+
+
+
+
 # Newton solver and helpers
 # ============================================================
 
 
-def newton(residual, x0, jacobian=None, newton_tol=1e-8, solve_function=None,
+def newton(residual, x0, jacobian_func=None, newton_tol=1e-8,
+           solve_function=None,
            jacobian_fd_eps=1e-10, max_iter=20):
     """Find the minimum of the residual function using Newton's method.
 
-    Optionally specify a Jacobian, a tolerance and/or a function to solve
-    the linear system J.dx = r.
+    Optionally specify a Jacobian calculation function, a tolerance and/or
+    a function to solve the linear system J.dx = r.
 
-    If no Jacobian is given the Jacobian is finite differenced.
+    If no Jacobian_Func is given the Jacobian is finite differenced.
     If no solve function is given then sp.linalg.solve is used.
 
     Norm for measuring residual is max(abs(..)).
     """
-    if jacobian is None:
-        jacobian = par(finite_diff_jacobian, residual, eps=jacobian_fd_eps)
+    if jacobian_func is None:
+        jacobian_func = par(finite_diff_jacobian, residual, eps=jacobian_fd_eps)
 
     if solve_function is None:
         solve_function = sp.linalg.solve
@@ -343,10 +447,11 @@ def newton(residual, x0, jacobian=None, newton_tol=1e-8, solve_function=None,
                 raise
 
     # Call the real Newton solve function
-    return _newton(residual, x0, jacobian, newton_tol, wrapped_solve, max_iter)
+    return _newton(residual, x0, jacobian_func, newton_tol,
+                   wrapped_solve, max_iter)
 
 
-def _newton(residual, x0, jacobian, newton_tol, solve_function, max_iter):
+def _newton(residual, x0, jacobian_func, newton_tol, solve_function, max_iter):
     """Core function of newton(...)."""
 
     if max_iter <= 0:
@@ -360,9 +465,9 @@ def _newton(residual, x0, jacobian, newton_tol, solve_function, max_iter):
 
     # Otherwise reduce residual using Newtons method + recurse
     else:
-        J = jacobian(x0)
+        J = jacobian_func(x0)
         dx = solve_function(J, r)
-        return _newton(residual, x0 - dx, jacobian, newton_tol,
+        return _newton(residual, x0 - dx, jacobian_func, newton_tol,
                        solve_function, max_iter - 1)
 
 
@@ -441,7 +546,7 @@ def ab2_step(dt_n, y_n, dy_n, dt_nm1, dy_nm1):
     return y_np1
 
 
-def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
+def ebdf2_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
     """Take a single step of the explicit midpoint rule.
     From G&S pg. 715 and Prinja's thesis pg.45.
     """
@@ -450,7 +555,21 @@ def emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
     return y_np1
 
 # Same thing:
-ebdf2_step = emr_step
+emr_step = ebdf2_step
+
+
+def real_emr_step(ts, ys, func):
+    dtn = ts[-1] - ts[-2]
+
+    tn = ts[-2]
+    yn = ys[-2]
+
+    tnph = ts[-1] + dtn/2
+    ynph = yn + (dtn/2)*func(tn, yn)
+
+    ynp1 = yn + dtn * func(tnph, ynph)
+
+    return ynp1
 
 
 def ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1):
@@ -560,11 +679,11 @@ def bdf1_residual(base_residual, ts, ys):
     return base_residual(ts[-1], y_np1, dydt)
 
 
-def bdf2_residual(base_residual, ts, ys):
-    """ Calculate residual at latest time and y-value with the bdf2
+def bdf_residual(base_residual, ts, ys, dydt_func):
+    """ Calculate residual at latest time and y-value with a bdf
     approximation for the y derivative.
     """
-    return base_residual(ts[-1], ys[-1], bdf2_dydt(ts, ys))
+    return base_residual(ts[-1], ys[-1], dydt_func(ts, ys))
 
 
 def bdf2_dydt(ts, ys):
@@ -622,6 +741,11 @@ def bdf4_dydt(ts, ys):
 
 
     return dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(dtn + dtnm1)*((-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) - (-(-(ynm2 - ynm3)/dtnm3 + (ynm1 - ynm2)/dtnm2)/(dtnm2 + dtnm3) + (-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2))/(dtnm1 + dtnm2 + dtnm3))*(dtn + dtnm1 + dtnm2)/(dtn + dtnm1 + dtnm2 + dtnm3) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
+
+
+bdf2_residual = par(bdf_residual, dydt_func=bdf2_dydt)
+bdf3_residual = par(bdf_residual, dydt_func=bdf3_dydt)
+bdf4_residual = par(bdf_residual, dydt_func=bdf4_dydt)
 
 
 # Assumption: we never actually undo a timestep (otherwise dys will become
@@ -701,7 +825,8 @@ def default_dt_scaling(target_error, error_estimate, timestepper_order):
     Taken from Gresho and Sani (various places).
     """
     try:
-        scaling_factor = (target_error/error_estimate)**(1.0/(1.0 + timestepper_order))
+        power = (1.0/(1.0 + timestepper_order))
+        scaling_factor = (target_error/error_estimate)**power
 
     except ZeroDivisionError:
         scaling_factor = MAX_ALLOWED_DT_SCALING_FACTOR
@@ -714,6 +839,18 @@ def failed_timestep_scaling(*_):
     arguments.
     """
     return TIMESTEP_FAILURE_DT_SCALING_FACTOR
+
+
+def create_random_time_adaptor(base_dt,
+                               min_scaling=TIMESTEP_FAILURE_DT_SCALING_FACTOR,
+                               max_scaling=MAX_ALLOWED_DT_SCALING_FACTOR):
+    """Create time adaptor which randomly changes the time step to some
+    multiple of base_dt. Scaling factor is within the allowed range. For
+    testing purposes.
+    """
+    def random_time_adaptor(*_):
+        return base_dt * random.uniform(min_scaling, max_scaling)
+    return random_time_adaptor
 
 
 def scale_timestep(dt, target_error, error_norm, order,
@@ -752,7 +889,8 @@ def scale_timestep(dt, target_error, error_norm, order,
         return new_dt
 
 
-def general_time_adaptor(ts, ys, target_error, method_order, lte_calculator, **kwargs):
+def general_time_adaptor(ts, ys, target_error, method_order, lte_calculator,
+                         **kwargs):
     """General base function for time adaptivity function.
 
     Partially evaluate with a method order and an lte_calculator to create
@@ -768,7 +906,8 @@ def general_time_adaptor(ts, ys, target_error, method_order, lte_calculator, **k
     error_norm = sp.linalg.norm(sp.array(lte_est, ndmin=1), 2)
 
     # Return the scaled timestep (with lots of checks).
-    return scale_timestep(ts[-1] - ts[-2], target_error, error_norm, method_order)
+    return scale_timestep(ts[-1] - ts[-2], target_error, error_norm,
+                          method_order)
 
 
 def bdf2_mp_prinja_lte_estimate(ts, ys):
@@ -1208,7 +1347,8 @@ def test_bad_timestep_handling():
     initial_ts = list_cummulative_sums(dts[:-1], 0.)
     initial_ys = [sp.array(exp3_exact(t), ndmin=1) for t in initial_ts]
 
-    adaptor = par(general_time_adaptor, lte_calculator=bdf2_mp_lte_estimate, method_order=2)
+    adaptor = par(general_time_adaptor, lte_calculator=bdf2_mp_lte_estimate,
+                  method_order=2)
 
     ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
                      bdf2_residual, tol, adaptor)
@@ -1222,34 +1362,35 @@ def test_bad_timestep_handling():
     utils.assert_list_almost_equal(ys, map(exp3_exact, ts), overall_tol)
 
 
+
 def test_ab2():
-    def dydt(t, y):
-        return y
-    tmax = 1.0
 
-    # Oscillate dt to check variable timestep maths is ok.
-    dt_base = 1e-4
-    input_dts = it.cycle([dt_base, 15*dt_base])
+    def check_explicit_stepper(stepper, exact_symb):
 
-    # Starting values
-    ts = [0.0, 1e-6]
-    ys = map(exp, ts)
-    dts = [1e-6]
+        exact, residual, dys, J = utils.symb2functions(exact_symb)
 
-    while ts[-1] < tmax:
-        dtprev = dts[-1]
-        dt = input_dts.next()
+        base_dt = 1e-3
+        ys, ts = odeint_explicit(dys[1], exact(0.0), base_dt, 1.0, stepper,
+                                 time_adaptor=create_random_time_adaptor(base_dt))
 
-        y_np1 = ab2_step(dt, ys[-1], dydt(ts[-1], ys[-1]),
-                         dtprev, dydt(ts[-2], ys[-2]))
-        ys.append(y_np1)
-        ts.append(ts[-1] + dt)
-        dts.append(dt)
+        exact_ys = map(exact, ts)
+        utils.assert_list_almost_equal(ys, exact_ys, 1e-4)
 
-    # plt.plot(ts, ys, 'x', ts, map(exp, ts))
-    # plt.show()
 
-    utils.assert_almost_equal(ys[-1], exp(ts[-1]), 1e-5)
+    t = sympy.symbols('t')
+    functions = [2*t**2,
+                 sympy.exp(t),
+                 3*sympy.exp(-t)
+                 ]
+
+    steppers = ['ab2',
+                # 'ebdf2',
+                # 'ebdf3'
+                ]
+
+    for func in functions:
+        for stepper in steppers:
+            yield check_explicit_stepper, stepper, func
 
 
 def test_dydt_calcs():
