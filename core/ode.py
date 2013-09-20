@@ -42,6 +42,7 @@ MAX_ALLOWED_TIMESTEP = 1e8
 
 # Change current emr to ebdf2
 
+
 # Data storage notes
 # ============================================================
 
@@ -331,7 +332,7 @@ def higher_order_explicit_start(order, func, ts, ys):
     while len(ys) < order:
         ys, ts = _odeint_explicit(func, ts, ys, starting_dt,
                                   ts[-1] + starting_dt,
-                                  real_emr_step)
+                                  emr_step)
 
     return ts, ys
 
@@ -554,11 +555,8 @@ def ebdf2_step(dt_n, y_n, dy_n, dt_nm1, y_nm1):
     y_np1 = (1 - dtr**2)*y_n + (1 + dtr)*dt_n*dy_n + (dtr**2)*(y_nm1)
     return y_np1
 
-# Same thing:
-emr_step = ebdf2_step
 
-
-def real_emr_step(ts, ys, func):
+def emr_step(ts, ys, func):
     dtn = ts[-1] - ts[-2]
 
     tn = ts[-2]
@@ -929,7 +927,7 @@ def bdf2_mp_prinja_lte_estimate(ts, ys):
     dy_n = bdf2_dydt(ts[:-1], ys[:-1])
 
     # Calculate predictor value (variable dt explicit mid point rule)
-    y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
+    y_np1_EMR = ebdf2_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
 
     error_weight = (dt_nm1 + dt_n) / (3*dt_n + 2*dt_nm1)
 
@@ -959,7 +957,7 @@ def bdf2_mp_gs_lte_estimate(ts, ys):
     dy_n = bdf2_dydt(ts[:-1], ys[:-1])
 
     # Calculate predictor value (variable dt explicit mid point rule)
-    y_np1_EMR = emr_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
+    y_np1_EMR = ebdf2_step(dt_n, y_n, dy_n, dt_nm1, y_nm1)
 
     error_weight = ((1.0 + dtrinv)**2) / \
         (1.0 + 3.0*dtrinv + 4.0 * dtrinv**2
@@ -1296,7 +1294,7 @@ def f13_lte_est(ts, ys, F_func):
     dyn_approx = ((1/2)*(f_hat_nph + (dtn/dtnm1) * f_hat_nmh)
                   - (dtn**2/8)*Fdotddyn_approx)
 
-    ynp1_P = emr_step(dtn, yn, dyn_approx, dtnm1, ynm1)
+    ynp1_P = ebdf2_step(dtn, yn, dyn_approx, dtnm1, ynm1)
 
     print dtn, ynp1_P, ynp1_MP
 
