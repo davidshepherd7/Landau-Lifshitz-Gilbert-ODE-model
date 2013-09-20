@@ -142,7 +142,7 @@ def check_residual(residual, initial_m):
     f_residual = ft.partial(residual, mag_params)
 
     # Timestep to a solution + convert to spherical
-    m_list, result_times = ode.odeint(f_residual, sp.array(initial_m),
+    result_times, m_list = ode.odeint(f_residual, sp.array(initial_m),
                                       tmax, dt=0.01)
     m_sph = [utils.array2sph(m) for m in m_list]
     result_pols = [m.pol for m in m_sph]

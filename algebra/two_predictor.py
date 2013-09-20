@@ -397,7 +397,7 @@ def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
 #     init_actions = par(ode.higher_order_start, 6)
 
 #     # Do it
-#     ys, ts = ode._odeint(residual, [sp.array(exact(0.0), ndmin=1)], [0.0],
+#     ts, ys = ode._odeint(residual, [sp.array(exact(0.0), ndmin=1)], [0.0],
 #                          1e-4, 5.0, ode.midpoint_residual,
 #                          1e-6, my_adaptor, init_actions)
 
@@ -471,7 +471,7 @@ import operator as op
 
 
 #     # Solve with imr
-#     est_ys, ts = ode.odeint(residual, exact(0.0), dt=dt,
+#     ts, est_ys = ode.odeint(residual, exact(0.0), dt=dt,
 #                             tmax=3.0, method='imr',
 #                             newton_tol=1e-10, jacobian_fd_eps=1e-12)
 
@@ -600,8 +600,8 @@ def test_ltes():
 
         # Run ode solver
         if implicit:
-            ys, ts = ode._odeint(
-                residual, [sp.array([exact(0.0)], ndmin=1)], [0.0],
+            ts, ys = ode._odeint(
+                residual, [0.0], [sp.array([exact(0.0)], ndmin=1)],
                 dt, tmax, method_residual,
                 target_error=None,
                 time_adaptor=ode.create_random_time_adaptor(base_dt),
@@ -609,7 +609,7 @@ def test_ltes():
                 newton_tol=newton_tol)
 
         else:
-            ys, ts = ode.odeint_explicit(
+            ts, ys = ode.odeint_explicit(
                 dys[1], exact(0.0), base_dt, tmax, method_residual,
                 time_adaptor=ode.create_random_time_adaptor(base_dt))
 

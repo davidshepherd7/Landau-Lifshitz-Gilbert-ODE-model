@@ -209,15 +209,15 @@ def _timestep_scheme_factory(method):
         raise ValueError(message)
 
 
-def higher_order_start(n_start, func, ys, ts):
+def higher_order_start(n_start, func, ts, ys):
     """ Run a few steps of imr with a very small timestep.
     Useful for generating extra initial data for multi-step methods.
     """
     starting_dt = 1e-6
     while len(ys) < n_start:
-        ys, ts = _odeint(func, ys, ts, starting_dt, ts[-1] + starting_dt,
+        ts, ys = _odeint(func, ts, ys, starting_dt, ts[-1] + starting_dt,
                          imr_residual)
-    return ys, ts
+    return ts, ys
 
 
 def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
@@ -256,12 +256,12 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
     ys = [sp.array(y0, ndmin=1)]  # List of y vectors (ndarrays)
 
     # Now call the actual function to do the work
-    return _odeint(func, ys, ts, dt, tmax, time_residual,
+    return _odeint(func, ts, ys, dt, tmax, time_residual,
                    target_error, time_adaptor, initialisation_actions,
                    **kwargs)
 
 
-def _odeint(func, ys, ts, dt, tmax, time_residual,
+def _odeint(func, ts, ys, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
             initialisation_actions=None, actions_after_timestep=None,
             **kwargs):
@@ -269,7 +269,7 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
     """
 
     if initialisation_actions is not None:
-        ys, ts = initialisation_actions(func, ys, ts)
+        ts, ys = initialisation_actions(func, ts, ys)
 
     # Main timestepping loop
     # ============================================================
@@ -320,13 +320,13 @@ def _odeint(func, ys, ts, dt, tmax, time_residual,
         ys.append(new_y_np1)
         ts.append(new_t_np1)
 
-    return ys, ts
+    return ts, ys
 
 
 def higher_order_explicit_start(n_start, func, ts, ys):
     starting_dt = 1e-6
     while len(ys) < n_start:
-        ys, ts = _odeint_explicit(func, ts, ys, starting_dt,
+        ts, ys = _odeint_explicit(func, ts, ys, starting_dt,
                                   ts[-1] + starting_dt,
                                   emr_step)
 
@@ -402,7 +402,7 @@ def _odeint_explicit(func, ts, ys, dt, tmax,
         ys.append(y_np1)
         ts.append(t_np1)
 
-    return ys, ts
+    return ts, ys
 
 
 
@@ -778,7 +778,7 @@ class TrapezoidRuleResidual(object):
         dt_n = 2*(ts[-2] - ts[-3])
 
         # Calculate time step
-        temp_ys, temp_ts = _odeint(base_residual, temp_ys, temp_ts, dt_n,
+        temp_ts, temp_ys = _odeint(base_residual, temp_ts, temp_ys, dt_n,
                                    temp_ts[-1] + dt_n, imr_residual)
 
         # Check that we got the right times: the midpoint should be at
@@ -1313,7 +1313,7 @@ def check_problem(method, residual, exact, tol=1e-4, tmax=2.0):
     and check that the solution matches.
     """
 
-    ys, ts = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
+    ts, ys = odeint(residual, [exact(0.0)], tmax, dt=1e-6,
                     method=method, target_error=tol)
 
     # Total error should be bounded by roughly n_steps * LTE
@@ -1342,7 +1342,7 @@ def test_bad_timestep_handling():
     adaptor = par(general_time_adaptor, lte_calculator=bdf2_mp_lte_estimate,
                   method_order=2)
 
-    ys, ts = _odeint(exp3_residual, initial_ys, initial_ts, dts[-1], tmax,
+    ts, ys = _odeint(exp3_residual, initial_ts, initial_ys, dts[-1], tmax,
                      bdf2_residual, tol, adaptor)
 
     # plt.plot(ts,ys)
@@ -1362,7 +1362,7 @@ def test_ab2():
         exact, residual, dys, J = utils.symb2functions(exact_symb)
 
         base_dt = 1e-3
-        ys, ts = odeint_explicit(dys[1], exact(0.0), base_dt, 1.0, stepper,
+        ts, ys = odeint_explicit(dys[1], exact(0.0), base_dt, 1.0, stepper,
                                  time_adaptor=create_random_time_adaptor(base_dt))
 
         exact_ys = map(exact, ts)
@@ -1426,7 +1426,7 @@ def test_exp_timesteppers():
             return y - dydt
         tmax = 1.0
         dt = 0.001
-        ys, ts = odeint(exp_residual, [exp(0.0)], tmax, dt=dt,
+        ts, ys = odeint(exp_residual, [exp(0.0)], tmax, dt=dt,
                         method=method)
 
         # plt.plot(ts,ys)
@@ -1453,7 +1453,7 @@ def test_vector_timesteppers():
         def residual(t, y, dydt):
             return sp.array([-1.0 * sin(t), y[1]]) - dydt
         tmax = 1.0
-        ys, ts = odeint(residual, [cos(0.0), exp(0.0)], tmax, dt=0.001,
+        ts, ys = odeint(residual, [cos(0.0), exp(0.0)], tmax, dt=0.001,
                         method=method)
 
         utils.assert_almost_equal(ys[-1][0], cos(tmax), tol[0])
@@ -1526,7 +1526,7 @@ def test_sharp_dt_change():
 #     mu = 1000
 #     residual = par(van_der_pol_residual, mu=mu)
 
-#     ys, ts = odeint(residual, [2.0, 0], 1000.0, dt=1e-6,
+#     ts, ys = odeint(residual, [2.0, 0], 1000.0, dt=1e-6,
 #                     method='imr ab', target_error=1e-3)
 
 #     print len(ts)
