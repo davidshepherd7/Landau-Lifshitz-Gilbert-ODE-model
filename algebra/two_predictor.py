@@ -34,7 +34,7 @@ def bdf2_lte(dtn, dtnm1, dddyn):
     return -((dtn + dtnm1)**2/(dtn*(2*dtn + dtnm1))) * dtn**3 * dddyn/6
 
 
-def bdf3_lte(dtn, dtnm1, dtnm2, dddyn):
+def bdf3_lte(*_):
     """Gresho and Sani pg.715, sign inverted
     """
     return 0 # No error to O(dtn**4) (third order)
@@ -46,7 +46,7 @@ def ebdf2_lte(dtn, dtnm1, dddyn):
     return (1 + dtnm1/dtn) * dtn**3 * dddyn / 6
 
 
-def ebdf3_lte(dtn, dtnm1, dtnm2, dddyn):
+def ebdf3_lte(*_):
     return 0 # no error to O(dtn**4) (third order)
 
 
@@ -447,6 +447,7 @@ def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
 
 import simpleode.core.example_residuals as er
 import scipy as sp
+import operator as op
 
 # def check_dddy_estimates(exact_symb):
 #     dt = 5e-2
@@ -580,5 +581,120 @@ def test_sum_dts():
         yield check_sum_dts, a, b
 
 
+def test_ltes():
+
+    import numpy
+    numpy.seterr(all='raise', divide='raise', over=None, under=None, invalid=None)
+
+    def check_lte(method_residual, lte, exact_symb, base_dt, implicit):
+
+        exact, residual, dys, J = utils.symb2functions(exact_symb)
+        dddy = dys[3]
+        Fddy = lambda t, y: J(t, y) * dys[2](t, y)
+
+        newton_tol = 1e-10
+
+        # tmax varies with dt so that we can vary dt over orders of
+        # magnitude.
+        tmax = 50*dt
+
+        # Run ode solver
+        if implicit:
+            ys, ts = ode._odeint(
+                residual, [sp.array([exact(0.0)], ndmin=1)], [0.0],
+                dt, tmax, method_residual,
+                target_error=None,
+                time_adaptor=ode.create_random_time_adaptor(base_dt),
+                initialisation_actions=par(ode.higher_order_start, 3),
+                newton_tol=newton_tol)
+
+        else:
+            ys, ts = ode.odeint_explicit(
+                dys[1], exact(0.0), base_dt, tmax, method_residual,
+                time_adaptor=ode.create_random_time_adaptor(base_dt))
+
+        dts = utils.ts2dts(ts)
+
+        # Check it's accurate-ish
+        exact_ys = map(exact, ts)
+        errors = map(op.sub, exact_ys, ys)
+        utils.assert_list_almost_zero(errors, 1e-3)
+
+        # Calculate ltes by two methods. Note that we need to drop a few
+        # values because exact calculation (may) need a few dts. Could be
+        # dodgy: exact dddys might not correspond to dddy in experiment if
+        # done over long time and we've wandered away from the solution.
+        exact_dddys = map(dddy, ts, ys)
+        exact_Fddys = map(Fddy, ts, ys)
+        exact_ltes = map(lte, dts[2:], dts[1:-1], dts[:-2],
+                         exact_dddys[3:], exact_Fddys[3:])
+        error_diff_ltes = map(op.sub, errors[1:], errors[:-1])[2:]
+
+        # Print for debugging when something goes wrong
+        print exact_ltes
+        print error_diff_ltes
+
+        # Probably the best test is that they give the same order of
+        # magnitude and the same sign... Can't test much more than that
+        # because we have no idea what the constant in front of the dt**4
+        # term is. Effective zero (noise level) is either dt**4 or newton
+        # tol, whichever is larger.
+        z = 50 * max(dt**4, newton_tol)
+        map(par(utils.assert_same_sign, fp_zero=z),
+            exact_ltes, error_diff_ltes)
+        map(par(utils.assert_same_order_of_magnitude, fp_zero=z),
+            exact_ltes, error_diff_ltes)
+
+        # For checking midpoint method in more detail on J!=0 cases
+        # if method_residual is ode.midpoint_residual:
+        #     if J(1,2) != 0:
+        #         assert False
+
+
+    t = sympy.symbols('t')
+    functions = [2*t**2,
+                 t**3 + 3*t**4,
+                 sympy.exp(t),
+                 3*sympy.exp(-t),
+                 sympy.sin(t),
+                 sympy.sin(t)**2 + sympy.cos(t)**2
+                 ]
+
+    methods = [
+        (ode.midpoint_residual, True,
+         lambda dtn, _, _1, dddyn, Fddy: imr_lte(dtn, dddyn, Fddy)
+         ),
+
+        (ode.bdf2_residual, True,
+         lambda dtn, dtnm1, _, dddyn, _1: bdf2_lte(dtn, dtnm1, dddyn)
+         ),
+
+        (ode.bdf3_residual, True,
+         lambda dtn, dtnm1, dtnm2, dddyn, _: bdf3_lte(dtn, dtnm1, dtnm2, dddyn)
+         ),
+
+        ('ab2', False,
+         lambda dtn, dtnm1, _, dddyn, _1: ab2_lte(dtn, dtnm1, dddyn)
+         ),
+
+         # ('ebdf2', False,
+         # lambda dtn, dtnm1, _, dddyn, _1: ebdf2_lte(dtn, dtnm1, dddyn)
+         # ),
+
+         # ('ebdf3', False,
+         # lambda *_: ebdf3_lte()
+         # ),
+
+        ]
+
+    # Seems to work from 1e-2 down until newton method stops converging due
+    # to FD'ed Jacobian. Just do a middling value so that we can wobble the
+    # step size around lots without problems.
+    dts = [1e-3]
+
+    for exact_symb in functions:
+        for method_residual, implicit, lte in methods:
+            for dt in dts:
+                yield check_lte, method_residual, lte, exact_symb, dt, implicit
 
 #
