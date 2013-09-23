@@ -2,6 +2,9 @@
 
 from scipy import exp, tanh, sin, cos
 import scipy as sp
+import sympy
+
+from functools import partial as par
 
 def exp_residual(t, y, dydt): return y - dydt
 def exp_dydt(t, y): return y
@@ -72,12 +75,45 @@ def stiff_example_exact(t):
                      ])
 
 
-def stiff_trig_residual(t, y, dydt):
-    return dydt - stiff_trig_dydt(t, y)
-def stiff_trig_dydt(t, y):
-    return 100 * (sin(t) - y)
-def stiff_trig_exact(t):
-    return (sin(t) - 0.01*cos(t) + 0.01*exp(-100*t))/1.0001
+def midpoint_method_killer_problem(y0, g_string, l):
+    """Generate a problem which should work badly in midpoint method.
+    Essentially these problems consist of two parts: a "main" solution
+    as given by g and (added to it) a damped exponential solution which
+    decays starting from y0 - g(0) to zero in a time frame determined by
+    l.
+
+    g_string is any function specified as a string to be fed into sympy.
+
+    y0 is an initial value, not equal to g(0).
+
+    l (lambda ) is the coefficient of "badness".
+
+    Derivation in notes 23/9/13.
+    """
+    sym_t, sym_y = sympy.symbols('t y')
+
+    g = sympy.sympify(g_string)
+
+    dgdt = sympy.diff(g, sym_t, 1)
+    g0 = g.subs(sym_t, 0).evalf()
+    exact_symb = (y0 - g0)*sympy.exp(-l*sym_t) + g
+
+    # Don't just diff exact, or we don't get the y dependence in there!
+    dydt_symb = -l*sym_y + l*g + sympy.diff(g, sym_t, 1)
+
+    exact_f = sympy.lambdify(sym_t, exact_symb)
+    dydt_f = sympy.lambdify((sym_t, sym_y), dydt_symb)
+
+    def residual(t, y, dydt):
+        return dydt - dydt_f(t, y)
+
+    return residual, dydt_f, exact_f
+
+trig_midpoint_killer_problem = par(midpoint_method_killer_problem, 5,
+                                   "sin(t) + cos(t)")
+
+poly_midpoint_killer_problem = par(midpoint_method_killer_problem, 5, "t**2")
+
 
 # ODE example for paper?
 def damped_oscillation_residual(omega, beta, t, y, dydt):
