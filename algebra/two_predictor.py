@@ -20,11 +20,13 @@ from functools import partial as par
 import simpleode.core.utils as utils
 import simpleode.core.ode as ode
 
+
 # Error calculations
 # ============================================================
 def imr_lte(dtn, dddynph, Fddynph):
     """From my derivations
     """
+    #??ds wrong sign?
     return dtn**3*dddynph/24 - dtn**3*Fddynph/8
 
 
@@ -52,6 +54,10 @@ def ebdf3_lte(*_):
 
 def ab2_lte(dtn, dtnm1, dddyn):
     return (2 + 3*dtnm1/dtn) * dtn**3 * dddyn/12
+
+
+def tr_lte(dtn, dddyn):
+    return -dtn**3 * dddyn/12
 
 
 def imr_f_approximation_error(dtn, Fddynph):
@@ -126,7 +132,8 @@ def sum_dts(a, b):
     # Deal with non-integer a
     a_int, a_frac = rational_as_mixed(a)
     if a_frac != 0:
-        return -a_frac * dts[a_int] + sum_dts(a_int, b)
+        result = -a_frac * dts[a_int] + sum_dts(a_int, b)
+        return result
 
     b_int, b_frac = rational_as_mixed(b)
     if b_frac != 0:
@@ -145,6 +152,7 @@ def bdf2_step_to_midpoint(ts, ys):
     ynm1 = ys[-3]
 
     return ode.ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1)
+
 
 def bdf3_step_to_midpoint(ts, ys):
 
@@ -179,19 +187,27 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     p_dtn = sum_dts(time_points[0], time_points[1])
     p_dtnm1 = sum_dts(time_points[1], time_points[2])
 
+    # To cancel errors we need the final step to be at t_np1
+    assert time_points[0] == 0
+
+    # The whole point of this stuff is to resuse y'_nph from midpoint so
+    # the one before final step must be at t_nph. Actually might want to
+    # change this later...
+    assert time_points[1] == sRat(1,2)
+
 
     # Construct errors and func for dyn estimate
     # ============================================================
 
     if dyn_estimate == "imr":
-        assert time_points[0] == 0
-        assert time_points[1] == sRat(1,2)
         dyn_error = imr_f_approximation_error(dts[0], Fddynph)
+
         dynm1_error = imr_f_approximation_error(dts[1], Fddynph)
         # + higher order terms due to expanding F, ddy from nmh to nph,
         # luckily for us these end up in O(dtn**4).
 
         dyn_func = ode.imr_dydt
+
 
     else:
         raise ValueError("Unrecognised dyn_estimate name " + dyn_estimate)
@@ -223,6 +239,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
 
         # Function to estimate ynph
         yn_func = bdf3_step_to_midpoint
+
     else:
         raise ValueError("Unrecognised yn_estimate name " + yn_estimate)
 
@@ -230,23 +247,24 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     # Construct errors and function for the predictor
     # ============================================================
 
-    if p_name == "ebdf2":
+    if p_name == "ebdf2" or p_name == "wrong step ebdf2":
+
+        if p_name == "wrong step ebdf2":
+            temp_p_dtnm1 = p_dtnm1 + dts[0]
+        else:
+            temp_p_dtnm1 = p_dtnm1
+
         y_np1_p_expr = y_np1_exact - (
             # Natural ebdf2 lte:
-            ebdf2_lte(p_dtn, p_dtnm1, dddynph)
+            ebdf2_lte(p_dtn, temp_p_dtnm1, dddynph)
             # error due to imr approximation to derivative:
             + ode.ebdf2_step(p_dtn, 0, dyn_error, p_dtnm1, 0)
             # error due to bdf2 approximation to midpoint: y
             + ode.ebdf2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
 
-        def p_func(ts, ys):
-
-            # Only works for tn = t{n+1/2}
-            assert time_points[0] == 0
-            assert time_points[1] == sRat(1,2)
+        def predictor_func(ts, ys):
             dtn = (ts[-1] - ts[-2])/2
             dtnm1 = dtn + ts[-2] - ts[-(time_points[2]+1)]
-            #
 
             ynm1 = ys[-(time_points[2]+1)]
             dyn = dyn_func(ts, ys)
@@ -272,16 +290,10 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
             + ode.ab2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
 
 
-        def p_func(ts, ys):
-
-            # Only works for tn = t{n+1/2}
-            assert time_points[0] == 0
-            assert time_points[1] == sRat(1,2)
+        def predictor_func(ts, ys):
             dtn = (ts[-1] - ts[-2])/2
-
             assert time_points[2] == sRat(3,2)
             dtnm1 = (ts[-1] - ts[-2])/2 + (ts[-2] - ts[-3])/2
-            #
 
             dyn = dyn_func(ts, ys)
             dynm1 = dyn_func(ts[:-1], ys[:-1])
@@ -301,7 +313,7 @@ def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
     else:
         raise ValueError("Unrecognised predictor name " + p_name)
 
-    return p_func, y_np1_p_expr
+    return predictor_func, y_np1_p_expr
 
 
 def generate_predictor_pair_scheme(p1_scheme, p2_scheme, yn_estimate,
@@ -334,17 +346,35 @@ def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
     x = A.inv()
 
     # Look at some things for the constant step case:
+    cse_print(constify_step(A))
     cse_print(constify_step(x))
     print sympy.pretty(constify_step(A).det())
 
     # We can get nice expressions by factorising things (row 2 dotted with
-    # [predictor values] gives us y_np1_exact, I think):
+    # [predictor values] gives us y_np1_exact):
     exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
                            zip(x.row(2), [y_np1_p1, y_np1_p2, y_np1_imr])])
 
     exact_ynp1_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
                                       y_np1_p1, y_np1_p2, y_np1_imr),
                                       exact_ynp1_symb)
+
+
+    # Debugging:
+    dddy_symb = sum([y_est * xi.factor() for xi, y_est in
+                    zip(x.row(0), [y_np1_p1, y_np1_p2, y_np1_imr])])
+    Fddy_symb = sum([y_est * xi.factor() for xi, y_est in
+                    zip(x.row(1), [y_np1_p1, y_np1_p2, y_np1_imr])])
+    dddy_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+                                      y_np1_p1, y_np1_p2, y_np1_imr),
+                                      dddy_symb)
+    Fddy_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+                                      y_np1_p1, y_np1_p2, y_np1_imr),
+                                      Fddy_symb)
+
+    print sympy.pretty(constify_step(dddy_symb))
+    print sympy.pretty(constify_step(Fddy_symb))
+    print sympy.pretty(constify_step(exact_ynp1_symb))
 
     def lte_est(ts, ys):
 
@@ -362,11 +392,23 @@ def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
         y_np1_exact = exact_ynp1_func(dtn, dtnm1, dtnm2, dtnm3,
                                       y_np1_p1, y_np1_p2, y_np1_imr)
 
-        # print "%0.16f"%y_np1_imr, "%0.16f"%y_np1_p1, "%0.16f"%y_np1_p2
-        # print y_np1_exact - y_np1_imr
+
+        dddy_est = dddy_func(dtn, dtnm1, dtnm2, dtnm3, y_np1_p1, y_np1_p2, y_np1_imr)
+        Fddy_est = Fddy_func(dtn, dtnm1, dtnm2, dtnm3, y_np1_p1, y_np1_p2, y_np1_imr)
+        print
+        print "%0.16f"%y_np1_imr, "%0.16f"%y_np1_p1, "%0.16f"%y_np1_p2
+        print "abs(y_np1_imr - y_np1_p1) =", abs(y_np1_imr - y_np1_p1)
+        print "abs(y_np1_p2 - y_np1_imr) =", abs(y_np1_p2 - y_np1_imr)
+        print "dddy_est =", dddy_est
+        print "Fddy_est =", Fddy_est
+        print "y_np1_exact - y_np1_imr =", y_np1_exact - y_np1_imr
+        print "-dtn**3 * dddy_est/24 =", -dtn**3 * dddy_est/24
 
         # Compare with IMR value to get truncation error
         return y_np1_exact - y_np1_imr
+        # ??ds
+
+        # return dtn**3
 
 
     return lte_est
@@ -696,5 +738,26 @@ def test_ltes():
         for method_residual, implicit, lte in methods:
             for dt in dts:
                 yield check_lte, method_residual, lte, exact_symb, dt, implicit
+
+
+def test_tr_ab2_lte_works():
+    """Make sure tr-ab can be derived using same methodology as I'm using
+    (also checks lte expressions).
+    """
+
+    dddy = sympy.symbols("y'''")
+    y_np1_tr = sympy.symbols("y_{n+1}_tr")
+
+    y_np1_ab2_expr = y_np1_exact - ab2_lte(dts[0], dts[1], dddy)
+    y_np1_tr_expr = y_np1_exact - tr_lte(dts[0], dddy)
+
+    A = system2matrix([y_np1_ab2_expr, y_np1_tr_expr], [dddy, y_np1_exact])
+    x = A.inv()
+
+    exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
+                        zip(x.row(1), [y_np1_p1, y_np1_tr])])
+
+    utils.assert_sym_eq(exact_ynp1_symb - y_np1_tr,
+                        (y_np1_p1 - y_np1_tr)/(3*(1 + dts[1]/dts[0])))
 
 #
