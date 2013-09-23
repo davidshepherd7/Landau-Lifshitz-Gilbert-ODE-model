@@ -573,10 +573,10 @@ def ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1):
 
     From Gresho and Sani pg.715.
     """
+    return (1 + (dtn/dtnm1)*(dtn/(2*dtn + dtnm1))) * yn \
+       + (dtn/dtnm1)*(dtn/(2*dtn + dtnm1)) * dynp1 \
+       + dtn*(dtn + dtnm1)/(2*dtn + dtnm1) * ynm1
 
-    # ??ds possibly not the most stable formulation
-    # numerically... differences of similar things!
-    return yn + dtn*(dtn/(2*dtn + dtnm1)) *((yn - ynm1)/dtnm1) + dtn*(dtn + dtnm1)/(2*dtn + dtnm1)*dynp1
 
 def ibdf3_step(dynp1, dtn, yn, dtnm1, ynm1, dtnm2, ynm2):
     return dynp1*(dtn**3*dtnm1**2*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**3*dtnm1*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**2*dtnm1**3*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn**2*dtnm1**2*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm1*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**4*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1**3*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**2*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + yn*(dtn**4*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 4*dtn**3*dtnm1*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**3*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 6*dtn**2*dtnm1**2*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 6*dtn**2*dtnm1*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 4*dtn*dtnm1**3*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 6*dtn*dtnm1**2*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**4*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtnm1**3*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**2*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm1*(-dtn**4*dtnm1/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**4*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**3*dtnm1**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 4*dtn**3*dtnm1*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**3*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm1**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1**2*dtnm2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1*dtnm2**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm2**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm2*(dtn**4*dtnm1/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**3*dtnm1**2/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm1**3/(3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + 4*dtn*dtnm1**3*dtnm2 + 6*dtn*dtnm1**2*dtnm2**2 + 2*dtn*dtnm1*dtnm2**3 + dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3))
@@ -619,26 +619,17 @@ def ebdf3_dynm1_step(ts, ys, dynm1):
 
 
 def imr_residual(base_residual, ts, ys):
-    dt_n = ts[-1] - ts[-2]
-    y_n = ys[-2]
-    y_np1 = ys[-1]
-
-    y_nph = sp.array((y_np1 + y_n) * 0.5)
-    t_nph = (ts[-1] + ts[-2]) * 0.5
+    y_nph = (ys[-1] + ys[-2])/2
+    t_nph = (ts[-1] + ts[-2])/2
     dydt_nph = imr_dydt(ts, ys)
-
     return base_residual(t_nph, y_nph, dydt_nph)
 
 
 def imr_dydt(ts, ys):
     """Get dy/dt at the midpoint as used by imr.
     """
-    dt_n = ts[-1] - ts[-2]
-    y_n = ys[-2]
-    y_np1 = ys[-1]
-
-    dydt = sp.array((y_np1 - y_n)/dt_n)
-    return dydt
+    dypnh_dt = (ys[-1] - ys[-2])/(ts[-1] - ts[-2])
+    return dypnh_dt
 
 
 def interpolate_dyn(ts, ys):
