@@ -111,6 +111,27 @@ def ll_residual(magnetic_parameters, t, m, dmdt):
     return dmdt - ll_dmdt(magnetic_parameters, t, m)
 
 
+def simple_llg_residual(t, m, dmdt):
+    mp = utils.MagParameters()
+    return llg_cartesian_residual(mp, t, m, dmdt)
+
+def simple_llg_initial(*_):
+    return utils.sph2cart([1.0, 0.0, sp.pi/18])
+
+
+def linear_H(t):
+    return sp.array([0,0,-0.5*t])
+
+def ramping_field_llg_residual(t, m, dmdt):
+    mp = utils.MagParameters()
+    mp.Hvec = linear_H
+    mp.alpha = 0.1
+    return llg_cartesian_residual(mp, t, m, dmdt)
+
+def ramping_field_llg_initial(*_):
+    return utils.sph2cart([1.0, 0.0, sp.pi/18])
+
+
 # def llg_constrained_cartesian_residual(magnetic_parameters, t, m_cart,
 #                                        dmdt_cart):
 
