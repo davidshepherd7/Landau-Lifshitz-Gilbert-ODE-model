@@ -26,8 +26,7 @@ import simpleode.core.ode as ode
 def imr_lte(dtn, dddynph, Fddynph):
     """From my derivations
     """
-    #??ds wrong sign?
-    return dtn**3*dddynph/24 - dtn**3*Fddynph/8
+    return dtn**3*dddynph/24 + dtn*imr_f_approximation_error(dtn, Fddynph)
 
 
 def bdf2_lte(dtn, dtnm1, dddyn):
@@ -61,6 +60,12 @@ def tr_lte(dtn, dddyn):
 
 
 def imr_f_approximation_error(dtn, Fddynph):
+    """My derivations:
+    y'_imr = y'(t_{n+1/2}) + dtn**2 * Fddynph/8 + O(dtn**3)
+
+    =>  y'(t_{n+1/2}) - y'_imr = -dtn**2 * Fddynph/8 + O(dtn**3)
+
+    """
     return -dtn**2*Fddynph/8
 
 
@@ -142,25 +147,25 @@ def sum_dts(a, b):
     return sum(dts[a:b])
 
 
-def bdf2_step_to_midpoint(ts, ys):
+def bdf2_step_to_midpoint(ts, ys, dyn_func):
 
     dtn = (ts[-1] - ts[-2])/2
     dtnm1 = ts[-2] - ts[-3]
 
-    dynp1 = ode.imr_dydt(ts, ys)
+    dynp1 = dyn_func(ts, ys)
     yn = ys[-2]
     ynm1 = ys[-3]
 
     return ode.ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1)
 
 
-def bdf3_step_to_midpoint(ts, ys):
+def bdf3_step_to_midpoint(ts, ys, dyn_func):
 
     dtn = (ts[-1] - ts[-2])/2
     dtnm1 = ts[-2] - ts[-3]
     dtnm2 = ts[-3] - ts[-4]
 
-    dynp1 = ode.imr_dydt(ts, ys)
+    dynp1 = dyn_func(ts, ys)
     yn = ys[-2]
     ynm1 = ys[-3]
     ynm2 = ys[-4]
