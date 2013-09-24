@@ -22,5 +22,8 @@ Run self tests with
 (requires the nose package:
 
     sudo apt-get install python-nose
-    
+
 on Debian based systems).
+
+
+If you're using this code please let me know! At the moment I occasionally make sweeping changes to interfaces under the assumption that I'm the sole user. So tell me and I'll try not to break your code. My email address is david[rest of my username] [at] gmail [dot] com.
