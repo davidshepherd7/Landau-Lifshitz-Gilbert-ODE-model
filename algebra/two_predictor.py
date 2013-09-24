@@ -203,29 +203,38 @@ def use_exact(n):
         return ys[n]
     return f
 
-    time_points, p_name = scheme
+
+def generate_predictor_scheme(time_points, predictor_name,
+                                yn_estimate, dyn_estimate):
 
     p_dtn = sum_dts(time_points[0], time_points[1])
     p_dtnm1 = sum_dts(time_points[1], time_points[2])
 
+    # Create functions of (corrector) ts that give the appropriate dts for
+    # this predictor.
+    n_hist = 4
+    p_dtn_func = generate_p_dt_func(n_hist, p_dtn)
+    p_dtnm1_func = generate_p_dt_func(n_hist, p_dtnm1)
+
     # To cancel errors we need the final step to be at t_np1
     assert time_points[0] == 0
-
-    # The whole point of this stuff is to resuse y'_nph from midpoint so
-    # the one before final step must be at t_nph. Actually might want to
-    # change this later...
-    assert time_points[1] == sRat(1,2)
 
 
     # Construct errors and func for dyn estimate
     # ============================================================
 
     if dyn_estimate == "imr":
+
+        # The whole point of this stuff is to resuse y'_nph from midpoint so
+        # the one before final step must be at t_nph. Actually might want to
+        # change this later...
+        assert time_points[1] == sRat(1,2)
+
         dyn_error = imr_f_approximation_error(dts[0], Fddynph)
 
         dynm1_error = imr_f_approximation_error(dts[1], Fddynph)
-        # + higher order terms due to expanding F, ddy from nmh to nph,
-        # luckily for us these end up in O(dtn**4).
+        # {Fddy}_nmh = {Fddy}_nph + higher order terms (complete abuse of
+        # notation here...), luckily for us these end up in O(dtn**4).
 
         dyn_func = ode.imr_dydt
 
@@ -247,7 +256,7 @@ def use_exact(n):
             + ode.ibdf2_step(dts[0]*sRat(1,2), 0,  dyn_error, dts[1], 0))
 
         # Function to estimate ynph
-        yn_func = bdf2_step_to_midpoint
+        yn_func = par(bdf2_step_to_midpoint, dyn_func=dyn_func)
 
     elif yn_estimate == "bdf3":
         # Error on y_nph as calculated by BDF2 using imr approximation for
@@ -258,8 +267,8 @@ def use_exact(n):
             # Error due to imr approximation to derivative:
             + ode.ibdf3_step(dyn_error, dts[0]*sRat(1,2), 0,  dts[1], 0, dts[2], 0))
 
-        # Function to estimate ynph
-        yn_func = bdf3_step_to_midpoint
+        # Function to use to estimate ynph in the predictor
+        yn_func = par(bdf3_step_to_midpoint, dyn_func=dyn_func)
 
     else:
         raise ValueError("Unrecognised yn_estimate name " + yn_estimate)
@@ -268,9 +277,9 @@ def use_exact(n):
     # Construct errors and function for the predictor
     # ============================================================
 
-    if p_name == "ebdf2" or p_name == "wrong step ebdf2":
+    if predictor_name == "ebdf2" or predictor_name == "wrong step ebdf2":
 
-        if p_name == "wrong step ebdf2":
+        if predictor_name == "wrong step ebdf2":
             temp_p_dtnm1 = p_dtnm1 + dts[0]
         else:
             temp_p_dtnm1 = p_dtnm1
@@ -283,17 +292,19 @@ def use_exact(n):
             # error due to bdf2 approximation to midpoint: y
             + ode.ebdf2_step(p_dtn, yn_error, 0, p_dtnm1, 0))
 
+
         def predictor_func(ts, ys):
-            dtn = (ts[-1] - ts[-2])/2
-            dtnm1 = dtn + ts[-2] - ts[-(time_points[2]+1)]
+
+            numer_p_dtn = p_dtn_func(ts)
+            numer_p_dtnm1 = p_dtnm1_func(ts)
 
             ynm1 = ys[-(time_points[2]+1)]
             dyn = dyn_func(ts, ys)
             yn = yn_func(ts, ys)
-            return ode.ebdf2_step(dtn, yn, dyn, dtnm1, ynm1)
+            return ode.ebdf2_step(numer_p_dtn, yn, dyn, numer_p_dtnm1, ynm1)
 
 
-    elif p_name == "ab2":
+    elif predictor_name == "ab2":
 
         if dyn_estimate == "imr":
             assert time_points[2] == sRat(3,2)
@@ -312,16 +323,18 @@ def use_exact(n):
 
 
         def predictor_func(ts, ys):
-            dtn = (ts[-1] - ts[-2])/2
-            assert time_points[2] == sRat(3,2)
-            dtnm1 = (ts[-1] - ts[-2])/2 + (ts[-2] - ts[-3])/2
 
+            numer_p_dtn = p_dtn_func(ts)
+            numer_p_dtnm1 = p_dtnm1_func(ts)
+
+            # Get list of the (corrector's) dts needed to calculate this
             dyn = dyn_func(ts, ys)
             dynm1 = dyn_func(ts[:-1], ys[:-1])
             yn = yn_func(ts, ys)
-            return ode.ab2_step(dtn, yn, dyn, dtnm1, dynm1)
 
-    # elif p_name == "ebdf3":
+            return ode.ab2_step(numer_p_dtn, yn, dyn, numer_p_dtnm1, dynm1)
+
+    # elif predictor_name == "ebdf3":
 
     # p_dtnm2 = sum_dts(time_points[2], time_points[3])
 
@@ -332,22 +345,19 @@ def use_exact(n):
     #         + ode.ebdf3_step(p_dtn, 0, dyn_error, p_dtnm1, 0, p_dtnm2, 0)
 
     else:
-        raise ValueError("Unrecognised predictor name " + p_name)
+        raise ValueError("Unrecognised predictor name " + predictor_name)
 
     return predictor_func, y_np1_p_expr
 
 
-def generate_predictor_pair_scheme(p1_scheme, p2_scheme, yn_estimate,
-                                  dyn_estimate):
+def generate_predictor_pair_scheme(p1_scheme, p2_scheme):
     """Generate two-predictor lte system of equations and predictor step
     functions.
     """
 
     # Generate the two schemes
-    p1_func, y_np1_p1_expr = generate_predictor_scheme(p1_scheme, yn_estimate,
-                                                       dyn_estimate)
-    p2_func, y_np1_p2_expr = generate_predictor_scheme(p2_scheme, yn_estimate,
-                                                       dyn_estimate)
+    p1_func, y_np1_p1_expr = generate_predictor_scheme(*p1_scheme)
+    p2_func, y_np1_p2_expr = generate_predictor_scheme(*p2_scheme)
 
     # LTE for IMR: just natural lte:
     y_np1_imr_expr = y_np1_exact - imr_lte(dts[0], dddynph, Fddynph)
@@ -356,12 +366,10 @@ def generate_predictor_pair_scheme(p1_scheme, p2_scheme, yn_estimate,
     return (y_np1_p1_expr, y_np1_p2_expr, y_np1_imr_expr), (p1_func, p2_func)
 
 
-def generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
-                                    dynph_approximation):
+def generate_predictor_pair_lte_est(p1_scheme, p2_scheme):
 
     lte_equations, (p1_func, p2_func) \
-      = generate_predictor_pair_scheme(p1, p2, ynph_approximation,
-                                       dynph_approximation)
+      = generate_predictor_pair_scheme(p1_scheme, p2_scheme)
 
     A = system2matrix(lte_equations, [dddynph, Fddynph, y_np1_exact])
     x = A.inv()
@@ -595,11 +603,11 @@ def test_generate_predictor_scheme_a_bit():
 
     # Check the we generate imr's lte if we plug in the right times and
     # approximations to ebdf2 (~explicit midpoint rule).
-    _, p_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
-                                              "bdf2", "imr")
+    _, p_lte = generate_predictor_scheme([0, sRat(1,2), 1], "ebdf2", "bdf2",
+                                          "imr")
 
-    _, p2_lte = generate_predictor_scheme(([0, sRat(1,2), 1], "ebdf2"),
-                                              "bdf3", "imr")
+    _, p2_lte = generate_predictor_scheme([0, sRat(1,2), 1], "ebdf2", "bdf3",
+                                           "imr")
 
     utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p_lte)
     utils.assert_sym_eq(y_np1_exact - imr_lte(dts[0], dddynph, Fddynph), p2_lte)

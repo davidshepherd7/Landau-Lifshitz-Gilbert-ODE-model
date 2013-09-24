@@ -172,8 +172,7 @@ def _timestep_scheme_factory(method):
         p2 = _method_dict['p2']
         ynph_approximation = _method_dict.get('ynph_approx', "bdf2")
         dynph_approximation = _method_dict.get('dynph_approx', "imr")
-        lte_est = tp.generate_predictor_pair_lte_est(p1, p2, ynph_approximation,
-                                                     dynph_approximation)
+        lte_est = tp.generate_predictor_pair_lte_est(p1, p2)
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
