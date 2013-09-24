@@ -740,7 +740,7 @@ def test_ltes():
                 yield check_lte, method_residual, lte, exact_symb, dt, implicit
 
 
-def test_tr_ab2_lte_works():
+def test_tr_ab2_scheme_generation():
     """Make sure tr-ab can be derived using same methodology as I'm using
     (also checks lte expressions).
     """
@@ -759,5 +759,28 @@ def test_tr_ab2_lte_works():
 
     utils.assert_sym_eq(exact_ynp1_symb - y_np1_tr,
                         (y_np1_p1 - y_np1_tr)/(3*(1 + dts[1]/dts[0])))
+
+
+def test_bdf2_ebdf2_scheme_generation():
+    """Make sure adaptive bdf2 can be derived using same methodology as I'm
+    using (also checks lte expressions).
+    """
+
+    dddy = sympy.symbols("y'''")
+    y_np1_bdf2 = sympy.symbols("y_{n+1}_bdf2")
+
+    y_np1_ebdf2_expr = y_np1_exact - ebdf2_lte(dts[0], dts[1], dddy)
+    y_np1_bdf2_expr = y_np1_exact - bdf2_lte(dts[0], dts[1], dddy)
+
+    A = system2matrix([y_np1_ebdf2_expr, y_np1_bdf2_expr], [dddy, y_np1_exact])
+    x = A.inv()
+
+    exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
+                        zip(x.row(1), [y_np1_p1, y_np1_bdf2])])
+
+    answer = -(dts[1] + dts[0])*(y_np1_bdf2 - y_np1_p1)/(3*dts[0] +2*dts[1])
+
+    utils.assert_sym_eq(exact_ynp1_symb - y_np1_bdf2,
+                        answer)
 
 #
