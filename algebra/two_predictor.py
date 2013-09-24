@@ -185,7 +185,23 @@ y_np1_imr, y_np1_p2, y_np1_p1 = sympy.symbols('y_0_imr y_0_p2 y_0_p1',
 
 # Calculate full errors
 # ============================================================
-def generate_predictor_scheme(scheme, yn_estimate, dyn_estimate):
+def generate_p_dt_func(n_hist, symbolic_func):
+    """Helper function: convert a symbolic function for predictor dt into a
+    python function f(ts) = predictor_dt.
+    """
+    f = sympy.lambdify(dts[:n_hist-1], symbolic_func)
+    def p_dt(ts):
+        # Get last n_hist-1 dts in order: n, nm1, nm2 etc.
+        dts = utils.ts2dts(ts[-n_hist:])[::-1]
+        print dts
+        return f(*dts)
+    return p_dt
+
+
+def use_exact(n):
+    def f(ts, ys):
+        return ys[n]
+    return f
 
     time_points, p_name = scheme
 
@@ -787,5 +803,19 @@ def test_bdf2_ebdf2_scheme_generation():
 
     utils.assert_sym_eq(exact_ynp1_symb - y_np1_bdf2,
                         answer)
+
+
+def test_generate_predictor_dt_func():
+
+    symbs = [dts[0], dts[1], dts[2], dts[0] + dts[1],
+             dts[0]/2 + dts[1]/2]
+
+    t = sympy.symbols('t')
+
+    fake_ts = utils.dts2ts(t, dts[::-1])
+
+    for symb in symbs:
+        print fake_ts
+        yield utils.assert_sym_eq, symb, generate_p_dt_func(3, symb)(fake_ts)
 
 #
