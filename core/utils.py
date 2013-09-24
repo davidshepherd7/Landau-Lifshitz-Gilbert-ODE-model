@@ -483,6 +483,14 @@ def dts_from_ts(ts):
 ts2dts = dts_from_ts
 
 
+def dts2ts(base, dts):
+    ts = [base]
+    for dt in dts:
+        ts.append(ts[-1] + dt)
+
+    return ts
+
+
 def ts2dtn(ts):
     return ts[-1] - ts[-2]
 
@@ -581,3 +589,16 @@ def test_skew():
 
         # a x b = - b x a
         assert_list_almost_zero(sp.dot(skew_mat, a) + sp.dot(a, skew_mat))
+
+
+def test_dts2ts():
+    """Check that ts2dts and dts2ts are the inverse of each other (except for
+    the requirement for a "base" value in dts2ts).
+    """
+    t = sympy.symbols('t')
+    dts = sympy.symbols('Delta9:0', Real=True)
+
+    results = ts2dts(dts2ts(t, dts))
+
+    for a, b in zip(results, dts):
+        assert_sym_eq(a, b)
