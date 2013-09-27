@@ -697,7 +697,7 @@ def bdf2_dydt(ts, ys):
     y_nm1 = ys[-3]
 
     # Copied from oomph-lib (algebraic rearrangement of G&S forumla).
-    dydt = (((1.0/dt_n) + (1.0/(dt_n + dt_nm1))) * y_np1
+    dydt = (((1/dt_n) + (1/(dt_n + dt_nm1))) * y_np1
             - ((dt_n + dt_nm1)/(dt_n * dt_nm1)) * y_n
             + (dt_n / ((dt_n + dt_nm1) * dt_nm1)) * y_nm1)
 
@@ -1557,3 +1557,62 @@ def test_newton():
 
     for res, exact in tests:
         check_newton(res, exact)
+
+def test_symbolic_compare_step_time_residual():
+
+    # Define the symbols we need
+    St = sympy.symbols('t')
+    Sdts = sympy.symbols('Delta0:9', Real=True)
+    Sys = sympy.symbols('y0:9', Real=True)
+    Sdys = sympy.symbols('dy0:9', Real=True)
+
+    # Generate the stuff needed to run the residual
+    def fake_eqn_residual(ts, ys, dy):
+        return Sdys[0] - dy
+    fake_ts = utils.dts2ts(St, Sdts[::-1])
+    fake_ys = Sys[::-1]
+
+
+    # print sympy.pretty(sympy.solve((ibdf2_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2]) - Sys[0]),
+    #                   Sdys[0])[0].collect(Sys).simplify())
+
+    # print sympy.pretty(bdf2_dydt(fake_ts, fake_ys).simplify())
+
+    def f(a, b):
+        expr = (a+b).ratsimp().factor()
+        # print sympy.pretty(expr)
+
+
+        top, bottom = expr.as_numer_denom()
+
+        topd = top.collect(Sys+Sdys,evaluate=False)
+        top2 = sum([k*(v.factor()) for k, v in topd.iteritems()])
+        print sympy.pretty(top2/bottom.factor())
+        expr = top2/bottom.simplify()
+        print sympy.pretty(expr)
+        assert expr == 0
+
+    # # Check bdf2
+    # step_result_bdf2 = ibdf2_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2])
+    # res_result_bdf2 = bdf2_residual(fake_eqn_residual, fake_ts, fake_ys)
+    # res_bdf2_step = sympy.solve(res_result_bdf2, Sys[0])
+
+    # assert len(res_bdf2_step) == 1
+    # utils.assert_sym_eq(res_bdf2_step[0], step_result_bdf2)
+
+
+    # Check bdf3
+    step_result_bdf3 = ibdf3_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2],
+                                  Sdts[2], Sys[3])
+    res_bdf3_result_bdf3 = bdf3_residual(fake_eqn_residual, fake_ts, fake_ys)
+    res_bdf3_step = sympy.solve(res_bdf3_result_bdf3, Sys[0])
+
+    assert len(res_bdf3_step) == 1
+    f(res_bdf3_step[0], step_result_bdf3)
+    utils.assert_sym_eq(res_bdf3_step[0], step_result_bdf3)
+
+
+
+if __name__ == '__main__':
+    test_symbolic_compare_step_time_residual()
+#
