@@ -72,7 +72,7 @@ def imr_f_approximation_error(dtn, Fddynph):
 # Helper functions
 # ============================================================
 def constify_step(expr):
-    return expr.subs([(dts[1], dts[0]), (dts[2], dts[0]), (dts[3], dts[0])])
+    return expr.subs([(Sdts[1], Sdts[0]), (Sdts[2], Sdts[0]), (Sdts[3], Sdts[0])])
 
 
 def cse_print(expr):
@@ -102,8 +102,20 @@ def is_rational(x):
         # If it's a sympy object this is all we need
         return x.is_rational
     except AttributeError:
-        # Otherwise only integer-like objects are rational
-        return int(x) == x
+        # Otherwise assume only integers are rational (not other way to
+        # represent rational numbers afaik).
+        return is_integer(x)
+
+
+def is_integer(x):
+    """Check if x is an integer by comparing it with floor(x). This should work
+    well with floats, sympy rationals etc.
+    """
+    return math.floor(x) == x
+
+
+def is_half_integer(x):
+    return x == (math.floor(x) + float(sRat(1,2)))
 
 
 def rational_as_mixed(x):
@@ -120,10 +132,10 @@ def sum_dts(a, b):
 
     e.g.
     a = 0, b = 2:
-    t_0 - t_2 = t_{n+1} - t_{n-1} = dt_{n+1} + dt_n = dts[0] + dts[1]
+    t_0 - t_2 = t_{n+1} - t_{n-1} = dt_{n+1} + dt_n = Sdts[0] + Sdts[1]
 
     a = 2, b = 0:
-    t_2 - t_0 = - dts[0] - dts[1]
+    t_2 - t_0 = - Sdts[0] - Sdts[1]
     """
 
     # Doesn't work for negative a, b
@@ -137,7 +149,7 @@ def sum_dts(a, b):
     # Deal with non-integer a
     a_int, a_frac = rational_as_mixed(a)
     if a_frac != 0:
-        result = -a_frac * dts[a_int] + sum_dts(a_int, b)
+        result = -a_frac * Sdts[a_int] + sum_dts(a_int, b)
         return result
 
     b_int, b_frac = rational_as_mixed(b)
@@ -175,9 +187,11 @@ def bdf3_step_to_midpoint(ts, ys, dyn_func):
 
 # Define symbol names
 # ============================================================
-dts = sympy.symbols('Delta0:9', Real=True)
-dddynph = sympy.symbols("y'''_h", Real=True)
-Fddynph = sympy.symbols("F.y''_h", Real=True)
+Sdts = sympy.symbols('Delta0:9', Real=True)
+Sys = sympy.symbols('y0:9', Real=True)
+St = sympy.symbols('t', Real=True)
+Sdddynph = sympy.symbols("y'''_h", Real=True)
+SFddynph = sympy.symbols("F.y''_h", Real=True)
 y_np1_exact = sympy.symbols('y_0', Real=True)
 y_np1_imr, y_np1_p2, y_np1_p1 = sympy.symbols('y_0_imr y_0_p2 y_0_p1',
                                               Real=True)
@@ -197,6 +211,20 @@ def generate_p_dt_func(n_hist, symbolic_func):
         return f(*dts)
     return p_dt
 
+def t_at_time_point(ts, time_point):
+    assert time_point >= 0
+
+    if is_integer(time_point):
+        return ts[-(time_point+1)]
+
+    # Otherwise linearly interpolate
+    else:
+        pa = int(math.floor(time_point))
+        pb = int(math.ceil(time_point))
+        frac = time_point - pa
+        ta = t_at_time_point(ts, pa)
+        tb = t_at_time_point(ts, pb)
+        return ta + frac*(tb - ta)
 
 def use_exact(n):
     def f(ts, ys):
@@ -350,17 +378,21 @@ def generate_predictor_scheme(time_points, predictor_name,
     return predictor_func, y_np1_p_expr
 
 
-def generate_predictor_pair_scheme(p1_scheme, p2_scheme):
+def generate_predictor_pair_scheme(p1_points, p1_predictor,
+                                   p2_points, p2_predictor,
+                                   **kwargs):
     """Generate two-predictor lte system of equations and predictor step
     functions.
     """
 
     # Generate the two schemes
-    p1_func, y_np1_p1_expr = generate_predictor_scheme(*p1_scheme)
-    p2_func, y_np1_p2_expr = generate_predictor_scheme(*p2_scheme)
+    p1_func, y_np1_p1_expr = generate_predictor_scheme(p1_points, p1_predictor,
+                                                        **kwargs)
+    p2_func, y_np1_p2_expr = generate_predictor_scheme(p2_points, p2_predictor,
+                                                        **kwargs)
 
     # LTE for IMR: just natural lte:
-    y_np1_imr_expr = y_np1_exact - imr_lte(dts[0], dddynph, Fddynph)
+    y_np1_imr_expr = y_np1_exact - imr_lte(Sdts[0], Sdddynph, SFddynph)
 
     # Return error expressions and stepper functions
     return (y_np1_p1_expr, y_np1_p2_expr, y_np1_imr_expr), (p1_func, p2_func)
@@ -371,7 +403,7 @@ def generate_predictor_pair_lte_est(p1_scheme, p2_scheme):
     lte_equations, (p1_func, p2_func) \
       = generate_predictor_pair_scheme(p1_scheme, p2_scheme)
 
-    A = system2matrix(lte_equations, [dddynph, Fddynph, y_np1_exact])
+    A = system2matrix(lte_equations, [Sdddynph, SFddynph, y_np1_exact])
     x = A.inv()
 
     # Look at some things for the constant step case:
@@ -384,7 +416,7 @@ def generate_predictor_pair_lte_est(p1_scheme, p2_scheme):
     exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
                            zip(x.row(2), [y_np1_p1, y_np1_p2, y_np1_imr])])
 
-    exact_ynp1_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+    exact_ynp1_func = sympy.lambdify((Sdts[0], Sdts[1], Sdts[2], Sdts[3],
                                       y_np1_p1, y_np1_p2, y_np1_imr),
                                       exact_ynp1_symb)
 
@@ -394,10 +426,10 @@ def generate_predictor_pair_lte_est(p1_scheme, p2_scheme):
                     zip(x.row(0), [y_np1_p1, y_np1_p2, y_np1_imr])])
     Fddy_symb = sum([y_est * xi.factor() for xi, y_est in
                     zip(x.row(1), [y_np1_p1, y_np1_p2, y_np1_imr])])
-    dddy_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+    dddy_func = sympy.lambdify((Sdts[0], Sdts[1], Sdts[2], Sdts[3],
                                       y_np1_p1, y_np1_p2, y_np1_imr),
                                       dddy_symb)
-    Fddy_func = sympy.lambdify((dts[0], dts[1], dts[2], dts[3],
+    Fddy_func = sympy.lambdify((Sdts[0], Sdts[1], Sdts[2], Sdts[3],
                                       y_np1_p1, y_np1_p2, y_np1_imr),
                                       Fddy_symb)
 
@@ -617,7 +649,7 @@ def test_generate_predictor_scheme_a_bit():
 def test_sum_dts():
 
     # Check a simple fractional case
-    utils.assert_sym_eq(sum_dts(sRat(1,2), 1), dts[0]/2)
+    utils.assert_sym_eq(sum_dts(sRat(1,2), 1), Sdts[0]/2)
 
     # Check two numbers the same gives zero always
     utils.assert_sym_eq(sum_dts(1, 1), 0)
@@ -632,7 +664,7 @@ def test_sum_dts():
 
         # Starting half a step earlier
         utils.assert_sym_eq(sum_dts(a, b + sRat(1,2)),
-                            sRat(1,2)*dts[int(b)] + sum_dts(a, b))
+                            sRat(1,2)*Sdts[int(b)] + sum_dts(a, b))
 
         # Check that we can split it up
         utils.assert_sym_eq(sum_dts(a, b),
@@ -798,8 +830,8 @@ def test_bdf2_ebdf2_scheme_generation():
     dddy = sympy.symbols("y'''")
     y_np1_bdf2 = sympy.symbols("y_{n+1}_bdf2")
 
-    y_np1_ebdf2_expr = y_np1_exact - ebdf2_lte(dts[0], dts[1], dddy)
-    y_np1_bdf2_expr = y_np1_exact - bdf2_lte(dts[0], dts[1], dddy)
+    y_np1_ebdf2_expr = y_np1_exact - ebdf2_lte(Sdts[0], Sdts[1], dddy)
+    y_np1_bdf2_expr = y_np1_exact - bdf2_lte(Sdts[0], Sdts[1], dddy)
 
     A = system2matrix([y_np1_ebdf2_expr, y_np1_bdf2_expr], [dddy, y_np1_exact])
     x = A.inv()
@@ -807,7 +839,7 @@ def test_bdf2_ebdf2_scheme_generation():
     exact_ynp1_symb = sum([y_est * xi.factor() for xi, y_est in
                         zip(x.row(1), [y_np1_p1, y_np1_bdf2])])
 
-    answer = -(dts[1] + dts[0])*(y_np1_bdf2 - y_np1_p1)/(3*dts[0] +2*dts[1])
+    answer = -(Sdts[1] + Sdts[0])*(y_np1_bdf2 - y_np1_p1)/(3*Sdts[0] +2*Sdts[1])
 
     utils.assert_sym_eq(exact_ynp1_symb - y_np1_bdf2,
                         answer)
@@ -815,15 +847,91 @@ def test_bdf2_ebdf2_scheme_generation():
 
 def test_generate_predictor_dt_func():
 
-    symbs = [dts[0], dts[1], dts[2], dts[0] + dts[1],
-             dts[0]/2 + dts[1]/2]
+    symbs = [Sdts[0], Sdts[1], Sdts[2], Sdts[0] + Sdts[1],
+             Sdts[0]/2 + Sdts[1]/2]
 
     t = sympy.symbols('t')
 
-    fake_ts = utils.dts2ts(t, dts[::-1])
+    fake_ts = utils.dts2ts(t, Sdts[::-1])
 
     for symb in symbs:
         print fake_ts
-        yield utils.assert_sym_eq, symb, generate_p_dt_func(3, symb)(fake_ts)
+        yield utils.assert_sym_eq, symb, generate_p_dt_func(symb)(fake_ts)
 
+
+def test_is_integer():
+    tests = [(0, True),
+             (0.0, True),
+             (0.1, False),
+             (1, True),
+             (1.0, True),
+             (1.1, False),
+             (-1.0, True),
+             (-1, True),
+             (-1.1, False),
+             (sp.nan, False),
+             # (sp.inf, False), # Returns True, not really what I want but
+                                # not easily fixable for all possible infs
+                                # (afaik)
+             (1 + 1e-15, False),
+             (1 - 1e-15, False),
+             ]
+
+    for t, result in tests:
+        assert is_integer(t) == result
+
+def test_is_half_integer():
+
+    tests = [(0, False),
+             (1239012424481273, False),
+             (sRat(1,2), True),
+             (1.5, True),
+             (sRat(5,2), True),
+             (2.0 + sRat(1,2), True),
+             (1.5 + 1e-15, False), # 1e-16 fails (gives true)
+             (1.51, False),
+             ]
+
+    for t, result in tests:
+        assert is_half_integer(t) == result
+
+
+def test_t_at_time_point():
+    tests = [0, 1, sRat(1,2), sRat(3,2), 1 + sRat(1,2), sRat(4,5),]
+    ts = range(11)
+    for pt in tests:
+        utils.assert_almost_equal(t_at_time_point(ts, pt), 10 - pt)
+
+# def test_symbolic_predictor_func_comparison():
+
+
+
+#     base = sRat(1,2)
+
+#     p2, _ = generate_predictor_scheme([PTInfo(base, None, "imr"),
+#         PTInfo(base + sRat(1,2) + 1, "corr_val", None),
+#         PTInfo(base + sRat(1,2) + 2, "corr_val", None)],
+#         "ibdf2")
+
+#     p3, _ = generate_predictor_scheme([PTInfo(base, None, "imr"),
+#         PTInfo(base + sRat(1,2) + 1, "corr_val", None),
+#         PTInfo(base + sRat(1,2) + 2, "corr_val", None),
+#         PTInfo(base + sRat(1,2) + 3, "corr_val", None)],
+#         "ibdf3")
+
+#     t = sympy.symbols('t')
+#     fake_ts = utils.dts2ts(t, Sdts[::-1])
+#     fake_ys = sym_ys[::-1]
+
+#     sym_p2 = p2(fake_ts, fake_ys)
+#     sym_p3 = p3(fake_ts, fake_ys)
+
+#     print sympy.pretty(sym_p2.simplify())
+#     print sympy.pretty(constify_step(sym_p2).simplify())
+
+#     print sympy.pretty(sym_p3.simplify())
+#     print sympy.pretty(constify_step(sym_p3).simplify())
+
+
+#     # assert False
 #
