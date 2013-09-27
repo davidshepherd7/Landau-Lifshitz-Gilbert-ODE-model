@@ -168,15 +168,28 @@ def _timestep_scheme_factory(method):
 
     elif label == 'imr w18':
         import simpleode.algebra.two_predictor as tp
-        p1 = _method_dict['p1']
-        p2 = _method_dict['p2']
+        p1_points = _method_dict['p1_points']
+        p1_pred = _method_dict['p1_pred']
+
+        p2_points = _method_dict['p2_points']
+        p2_pred = _method_dict['p2_pred']
+
+        symbolic = _method_dict['symbolic']
+
         ynph_approximation = _method_dict.get('ynph_approx', "bdf2")
         dynph_approximation = _method_dict.get('dynph_approx', "imr")
-        lte_est = tp.generate_predictor_pair_lte_est(p1, p2)
+        lte_est = tp.generate_predictor_pair_lte_est(
+            *tp.generate_predictor_pair_scheme(p1_points, p1_pred,
+                                            p2_points, p2_pred,
+                                            symb_exact=symbolic))
+
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
                       method_order=2)
-        return imr_residual, adaptor, par(higher_order_start, 5)
+
+        # ??ds don't actually need this many history values to start but it
+        # makes things easier so use this many for now.
+        return imr_residual, adaptor, par(higher_order_start, 12)
 
     elif label == 'trapezoid':
         # TR is actually self starting but due to technicalities with
@@ -252,13 +265,18 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
                    **kwargs)
 
 
-def _odeint(func, ts, ys, dt, tmax, time_residual,
+def _odeint(func, tsin, ysin, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
             initialisation_actions=None, actions_after_timestep=None,
             newton_failure_reduce_step=False,
             **kwargs):
     """Underlying function for odeint.
     """
+
+    # Make sure we only operator on a copy of (tsin, ysin) not the lists
+    # themselves! (possibility for subtle bugs otherwise)
+    ts = copy.copy(tsin)
+    ys = copy.copy(ysin)
 
     if initialisation_actions is not None:
         ts, ys = initialisation_actions(func, ts, ys)
