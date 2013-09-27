@@ -152,6 +152,11 @@ def bdf_method(order, derivative_point=0):
 
 def main():
 
+    print sympy.pretty(sympy.collect(bdf_method(2, 0).expand(), ys).simplify())
+
+    print "code for ibdf2 step:"
+    print my_bdf_code_gen(2, 0, True)
+
     # print "\n\n code for eBDF3 step:"
     # print my_bdf_code_gen(3, 1, False)
 
@@ -187,10 +192,10 @@ def my_bdf_code_gen(order, derivative_point, solve_for_ynp1):
         assert(len(bdf_method_solutions) == 1)
 
         # Convert it to a string
-        bdf_method_code = str(bdf_method_solutions[0].expand().collect(ys+dys))
+        bdf_method_code = str(bdf_method_solutions[0].expand().collect(ys+dys).simplify())
 
     else:
-        bdf_method_code = str(dydt_expr.expand().collect(ys+dys))
+        bdf_method_code = str(dydt_expr.expand().collect(ys+dys).simplify())
 
     # Replace the sympy variables with variable names consistent with my
     # code in ode.py
