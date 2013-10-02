@@ -176,12 +176,10 @@ def _timestep_scheme_factory(method):
 
         symbolic = _method_dict['symbolic']
 
-        ynph_approximation = _method_dict.get('ynph_approx', "bdf2")
-        dynph_approximation = _method_dict.get('dynph_approx', "imr")
         lte_est = tp.generate_predictor_pair_lte_est(
             *tp.generate_predictor_pair_scheme(p1_points, p1_pred,
                                             p2_points, p2_pred,
-                                            symb_exact=symbolic))
+                                            symbolic=symbolic))
 
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
@@ -191,7 +189,7 @@ def _timestep_scheme_factory(method):
         # makes things easier so use this many for now.
         return imr_residual, adaptor, par(higher_order_start, 12)
 
-    elif label == 'trapezoid':
+    elif label == 'trapezoid' or label == 'tr':
         # TR is actually self starting but due to technicalities with
         # getting derivatives of y from implicit formulas we need an extra
         # starting point.
@@ -213,13 +211,12 @@ def _timestep_scheme_factory(method):
         raise ValueError(message)
 
 
-def higher_order_start(n_start, func, ts, ys):
+def higher_order_start(n_start, func, ts, ys, dt=1e-6):
     """ Run a few steps of imr with a very small timestep.
     Useful for generating extra initial data for multi-step methods.
     """
-    starting_dt = 1e-6
     while len(ys) < n_start:
-        ts, ys = _odeint(func, ts, ys, starting_dt, ts[-1] + starting_dt,
+        ts, ys = _odeint(func, ts, ys, dt, ts[-1] + dt,
                          imr_residual)
     return ts, ys
 
@@ -249,11 +246,11 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
     time_residual, time_adaptor, initialisation_actions = \
         _timestep_scheme_factory(method)
 
-    # Check adaptivity arguments for consistency.
-    if target_error is None and time_adaptor is not None:
-        raise ValueError("Adaptive time stepping requires a target_error")
-    if target_error is not None and time_adaptor is None:
-        raise ValueError("Adaptive time stepping requires an adaptive method")
+    # # Check adaptivity arguments for consistency.
+    # if target_error is None and time_adaptor is not None:
+    #     raise ValueError("Adaptive time stepping requires a target_error")
+    # if target_error is not None and time_adaptor is None:
+    #     raise ValueError("Adaptive time stepping requires an adaptive method")
 
 
     ts = [0.0]  # List of times (floats)
@@ -268,7 +265,8 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
 def _odeint(func, tsin, ysin, dt, tmax, time_residual,
             target_error=None, time_adaptor=None,
             initialisation_actions=None, actions_after_timestep=None,
-            newton_failure_reduce_step=False,
+            newton_failure_reduce_step=False, jacobian_func=None,
+            vary_step=False,
             **kwargs):
     """Underlying function for odeint.
     """
@@ -280,6 +278,10 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
 
     if initialisation_actions is not None:
         ts, ys = initialisation_actions(func, ts, ys)
+
+    if vary_step:
+        assert time_adaptor == None
+        step_randomiser = create_random_time_adaptor(dt, 0.9, 1.1)
 
     # Main timestepping loop
     # ============================================================
@@ -293,10 +295,17 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
         def residual(y_np1):
             return time_residual(func, ts+[t_np1], ys+[y_np1])
 
+
+        if jacobian_func is not None:
+            J_f_of_y = lambda y: jacobian_func(t_np1, y)
+        else:
+            J_f_of_y = None
+
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
         try:
-            y_np1 = newton(residual, ys[-1], **kwargs)
+            y_np1 = newton(residual, ys[-1], jacobian_func=J_f_of_y,**kwargs)
+
         except sp.optimize.nonlin.NoConvergence:
 
             # If we are doing adaptive stepping (or overide allowing the
@@ -332,6 +341,9 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
                 sys.stderr.write('Rejected time step\n')
                 dt = exception_data.new_dt
                 continue
+
+        elif vary_step:
+            dt = step_randomiser()
 
         # Update results storage (don't do this earlier in case the time
         # step fails).
@@ -1309,6 +1321,19 @@ def f13_lte_est(ts, ys, F_func):
     return LTEn
 
 
+def get_ltes_from_data(maints, mainys, lte_est):
+
+    ltes = []
+
+    for ts, ys in zip(utils.partial_lists(maints, 6),
+                      utils.partial_lists(mainys, 6)):
+
+        this_lte = lte_est(ts, ys)
+
+        ltes.append(this_lte)
+
+    return ltes
+
 
 # Testing
 # ============================================================
@@ -1562,57 +1587,48 @@ def test_symbolic_compare_step_time_residual():
 
     # Define the symbols we need
     St = sympy.symbols('t')
-    Sdts = sympy.symbols('Delta0:9', Real=True)
-    Sys = sympy.symbols('y0:9', Real=True)
-    Sdys = sympy.symbols('dy0:9', Real=True)
+    Sdts = sympy.symbols('Delta0:9')
+    Sys = sympy.symbols('y0:9')
+    Sdys = sympy.symbols('dy0:9')
 
     # Generate the stuff needed to run the residual
-    def fake_eqn_residual(ts, ys, dy):
-        return Sdys[0] - dy
+    def fake_eqn_residual(ts, ys, dy): return Sdys[0] - dy
     fake_ts = utils.dts2ts(St, Sdts[::-1])
     fake_ys = Sys[::-1]
 
+    # Check bdf2
+    step_result_bdf2 = ibdf2_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2])
+    res_result_bdf2 = bdf2_residual(fake_eqn_residual, fake_ts, fake_ys)
+    res_bdf2_step = sympy.solve(res_result_bdf2, Sys[0])
 
-    # print sympy.pretty(sympy.solve((ibdf2_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2]) - Sys[0]),
-    #                   Sdys[0])[0].collect(Sys).simplify())
-
-    # print sympy.pretty(bdf2_dydt(fake_ts, fake_ys).simplify())
-
-    def f(a, b):
-        expr = (a+b).ratsimp().factor()
-        # print sympy.pretty(expr)
+    assert len(res_bdf2_step) == 1
+    utils.assert_sym_eq(res_bdf2_step[0], step_result_bdf2)
 
 
-        top, bottom = expr.as_numer_denom()
+    # # Check bdf3 -- ??ds too complex..
+    # step_result_bdf3 = ibdf3_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2],
+    #                               Sdts[2], Sys[3])
+    # res_bdf3_result_bdf3 = bdf3_residual(fake_eqn_residual, fake_ts, fake_ys)
+    # res_bdf3_step = sympy.solve(res_bdf3_result_bdf3, Sys[0])
 
-        topd = top.collect(Sys+Sdys,evaluate=False)
-        top2 = sum([k*(v.factor()) for k, v in topd.iteritems()])
-        print sympy.pretty(top2/bottom.factor())
-        expr = top2/bottom.simplify()
-        print sympy.pretty(expr)
-        assert expr == 0
-
-    # # Check bdf2
-    # step_result_bdf2 = ibdf2_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2])
-    # res_result_bdf2 = bdf2_residual(fake_eqn_residual, fake_ts, fake_ys)
-    # res_bdf2_step = sympy.solve(res_result_bdf2, Sys[0])
-
-    # assert len(res_bdf2_step) == 1
-    # utils.assert_sym_eq(res_bdf2_step[0], step_result_bdf2)
+    # assert len(res_bdf3_step) == 1
+    # utils.assert_sym_eq(res_bdf3_step[0], step_result_bdf3)
 
 
-    # Check bdf3
-    step_result_bdf3 = ibdf3_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2],
-                                  Sdts[2], Sys[3])
-    res_bdf3_result_bdf3 = bdf3_residual(fake_eqn_residual, fake_ts, fake_ys)
-    res_bdf3_step = sympy.solve(res_bdf3_result_bdf3, Sys[0])
+def test_get_ltes_from_data():
 
-    assert len(res_bdf3_step) == 1
-    f(res_bdf3_step[0], step_result_bdf3)
-    utils.assert_sym_eq(res_bdf3_step[0], step_result_bdf3)
+    # Generate results
+    dt = 0.01
+    ys, ts = odeint(exp_residual, [exp(0.0)], tmax=0.5, dt=dt,
+                            method="bdf2")
 
+    # Generate ltes
+    ltes = get_ltes_from_data(ts, ys, bdf2_mp_lte_estimate)
 
+    # Just check that the length is right and that they are the right
+    # order of magnitude to be ltes.
+    assert len(ltes) == len(ys) - 5
+    for lte in ltes:
+        utils.assert_same_order_of_magnitude(lte, dt**3)
 
-if __name__ == '__main__':
-    test_symbolic_compare_step_time_residual()
 #

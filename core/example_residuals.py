@@ -100,6 +100,7 @@ def midpoint_method_killer_problem(y0, g_string, l):
 
     # Don't just diff exact, or we don't get the y dependence in there!
     dydt_symb = -l*sym_y + l*g + sympy.diff(g, sym_t, 1)
+    F = sympy.diff(dydt_symb, sym_y, 1)
 
     exact_f = sympy.lambdify(sym_t, exact_symb)
     dydt_f = sympy.lambdify((sym_t, sym_y), dydt_symb)
@@ -107,7 +108,7 @@ def midpoint_method_killer_problem(y0, g_string, l):
     def residual(t, y, dydt):
         return dydt - dydt_f(t, y)
 
-    return residual, dydt_f, exact_f
+    return residual, dydt_f, exact_f, (exact_symb, F)
 
 trig_midpoint_killer_problem = par(midpoint_method_killer_problem, 5,
                                    "sin(t) + cos(t)")
