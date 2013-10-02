@@ -18,7 +18,7 @@ def calculate_switching_time(magnetic_parameters, p_start, p_now):
     with the magnetic parameters given.
     """
 
-    # # Should never quite get to pi/2
+    # Should never quite get to pi/2
     # if p_now >= pi/2:
     #     return sp.inf
 

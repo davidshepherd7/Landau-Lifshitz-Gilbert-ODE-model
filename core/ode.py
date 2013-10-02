@@ -30,35 +30,29 @@ MIN_ALLOWED_TIMESTEP = 1e-8
 MAX_ALLOWED_TIMESTEP = 1e8
 
 
-
 # Data storage notes
 # ============================================================
-
 # Y values and time values are stored in lists throughout (for easy
 # appending).
-
 # The final value in each of these lists (accessed with [-1]) is the most
 # recent.
-
 # Almost always the most recent value in the list is the current
 # guess/result for y_np1/t_np1 (i.e. y_{n+1}, t_{n+1}, i.e. the value being
 # calculated), the previous is y_n, etc.
-
 # Denote values of y/t at timestep using eg. y_np1 for y at step n+1. Use
 # 'h' for 0.5, 'm' for minus, 'p' for plus (since we can't include .,-,+ in
 # variable names).
-
-
-
+#
+#
 # Random notes:
 # ============================================================
-
 # Try to always use fractions rather than floating point values because
 # this allows us to use the same functions in sympy for algebraic
 # computations without loss of accuracy.
 
 
 class FailedTimestepError(Exception):
+
     def __init__(self, new_dt):
         self.new_dt = new_dt
 
@@ -67,7 +61,8 @@ class FailedTimestepError(Exception):
             + repr(self.new_dt)
 
 
-class ConvergenceFailure(Exception): pass
+class ConvergenceFailure(Exception):
+    pass
 
 
 def _timestep_scheme_factory(method):
@@ -88,7 +83,7 @@ def _timestep_scheme_factory(method):
     if isinstance(method, dict):
         _method_dict = method
     else:
-        _method_dict = {'label' : method}
+        _method_dict = {'label': method}
 
     label = _method_dict.get('label').lower()
 
@@ -178,8 +173,8 @@ def _timestep_scheme_factory(method):
 
         lte_est = tp.generate_predictor_pair_lte_est(
             *tp.generate_predictor_pair_scheme(p1_points, p1_pred,
-                                            p2_points, p2_pred,
-                                            symbolic=symbolic))
+                                               p2_points, p2_pred,
+                                               symbolic=symbolic))
 
         adaptor = par(general_time_adaptor,
                       lte_calculator=lte_est,
@@ -246,12 +241,11 @@ def odeint(func, y0, tmax, dt, method='bdf2', target_error=None, **kwargs):
     time_residual, time_adaptor, initialisation_actions = \
         _timestep_scheme_factory(method)
 
-    # # Check adaptivity arguments for consistency.
+    # Check adaptivity arguments for consistency.
     # if target_error is None and time_adaptor is not None:
     #     raise ValueError("Adaptive time stepping requires a target_error")
     # if target_error is not None and time_adaptor is None:
     #     raise ValueError("Adaptive time stepping requires an adaptive method")
-
 
     ts = [0.0]  # List of times (floats)
     ys = [sp.array(y0, ndmin=1)]  # List of y vectors (ndarrays)
@@ -280,7 +274,7 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
         ts, ys = initialisation_actions(func, ts, ys)
 
     if vary_step:
-        assert time_adaptor == None
+        assert time_adaptor is None
         step_randomiser = create_random_time_adaptor(dt, 0.9, 1.1)
 
     # Main timestepping loop
@@ -295,7 +289,6 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
         def residual(y_np1):
             return time_residual(func, ts+[t_np1], ys+[y_np1])
 
-
         if jacobian_func is not None:
             J_f_of_y = lambda y: jacobian_func(t_np1, y)
         else:
@@ -304,7 +297,7 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
         # Try to solve the system, using the previous y as an initial
         # guess. If it fails reduce dt and try again.
         try:
-            y_np1 = newton(residual, ys[-1], jacobian_func=J_f_of_y,**kwargs)
+            y_np1 = newton(residual, ys[-1], jacobian_func=J_f_of_y, **kwargs)
 
         except sp.optimize.nonlin.NoConvergence:
 
@@ -337,7 +330,7 @@ def _odeint(func, tsin, ysin, dt, tmax, time_residual,
 
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
-            except FailedTimestepError, exception_data:
+            except FailedTimestepError as exception_data:
                 sys.stderr.write('Rejected time step\n')
                 dt = exception_data.new_dt
                 continue
@@ -398,7 +391,6 @@ def odeint_explicit(func, y0, dt, tmax, method='ab2', time_adaptor=None,
     else:
         raise NotImplementedError("method "+method+" not implement (yet?)")
 
-
     # Generate enough values to start the main method (using emr)
     ts, ys = higher_order_explicit_start(n_start, func, ts, ys)
 
@@ -423,7 +415,7 @@ def _odeint_explicit(func, ts, ys, dt, tmax,
 
             # If the scaling factor is too small then don't store this
             # timestep, instead repeat it with the new step size.
-            except FailedTimestepError, exception_data:
+            except FailedTimestepError as exception_data:
                 sys.stderr.write('Rejected time step\n')
                 dt = exception_data.new_dt
                 continue
@@ -435,13 +427,8 @@ def _odeint_explicit(func, ts, ys, dt, tmax,
     return ts, ys
 
 
-
-
-
 # Newton solver and helpers
 # ============================================================
-
-
 def newton(residual, x0, jacobian_func=None, newton_tol=1e-8,
            solve_function=None,
            jacobian_fd_eps=1e-10, max_iter=20):
@@ -456,7 +443,10 @@ def newton(residual, x0, jacobian_func=None, newton_tol=1e-8,
     Norm for measuring residual is max(abs(..)).
     """
     if jacobian_func is None:
-        jacobian_func = par(finite_diff_jacobian, residual, eps=jacobian_fd_eps)
+        jacobian_func = par(
+            finite_diff_jacobian,
+            residual,
+            eps=jacobian_fd_eps)
 
     if solve_function is None:
         solve_function = sp.linalg.solve
@@ -507,17 +497,15 @@ def finite_diff_jacobian(residual, x, eps):
 
     # For each entry in x
     for i in range(0, n):
-        xtemp = x.copy() # Force a copy so that we don't modify x
+        xtemp = x.copy()  # Force a copy so that we don't modify x
         xtemp[i] += eps
-        J[:,i] = (residual(xtemp) - residual(x))/eps
+        J[:, i] = (residual(xtemp) - residual(x))/eps
 
     return J
 
 
-
 # Interpolation helpers
 # ============================================================
-
 def my_interpolate(ts, ys, n_interp, use_y_np1_in_interp=False):
     # Find the start and end of the slice of ts, ys that we want to use for
     # interpolation.
@@ -603,11 +591,23 @@ def ibdf2_step(dtn, yn, dynp1, dtnm1, ynm1):
     Generated by sym-bdf3.py
     """
 
-    return (-dtn**2*ynm1 + dtn*dtnm1*dynp1*(dtn + dtnm1) + yn*(dtn**2 + 2*dtn*dtnm1 + dtnm1**2))/(dtnm1*(2*dtn + dtnm1))
+    return (
+        (-dtn**2*ynm1 + dtn*dtnm1*dynp1*(dtn + dtnm1) + yn *
+         (dtn**2 + 2*dtn*dtnm1 + dtnm1**2))/(dtnm1*(2*dtn + dtnm1))
+    )
 
 
 def ibdf3_step(dynp1, dtn, yn, dtnm1, ynm1, dtnm2, ynm2):
-    return (dtn**2*dtnm1*ynm2*(dtn**2 + 2*dtn*dtnm1 + dtnm1**2) - dtn**2*ynm1*(dtn**2*dtnm1 + dtn**2*dtnm2 + 2*dtn*dtnm1**2 + 4*dtn*dtnm1*dtnm2 + 2*dtn*dtnm2**2 + dtnm1**3 + 3*dtnm1**2*dtnm2 + 3*dtnm1*dtnm2**2 + dtnm2**3) + dtn*dtnm1*dtnm2*dynp1*(dtn**2*dtnm1 + dtn**2*dtnm2 + 2*dtn*dtnm1**2 + 3*dtn*dtnm1*dtnm2 + dtn*dtnm2**2 + dtnm1**3 + 2*dtnm1**2*dtnm2 + dtnm1*dtnm2**2) + dtnm2*yn*(dtn**4 + 4*dtn**3*dtnm1 + 2*dtn**3*dtnm2 + 6*dtn**2*dtnm1**2 + 6*dtn**2*dtnm1*dtnm2 + dtn**2*dtnm2**2 + 4*dtn*dtnm1**3 + 6*dtn*dtnm1**2*dtnm2 + 2*dtn*dtnm1*dtnm2**2 + dtnm1**4 + 2*dtnm1**3*dtnm2 + dtnm1**2*dtnm2**2))/(dtnm1*dtnm2*(3*dtn**2*dtnm1 + 3*dtn**2*dtnm2 + 4*dtn*dtnm1**2 + 6*dtn*dtnm1*dtnm2 + 2*dtn*dtnm2**2 + dtnm1**3 + 2*dtnm1**2*dtnm2 + dtnm1*dtnm2**2))
+    return (
+        (
+            dtn**2*dtnm1*ynm2*(
+                dtn**2 + 2*dtn*dtnm1 + dtnm1**2) - dtn**2*ynm1*(
+                dtn**2*dtnm1 + dtn**2*dtnm2 + 2*dtn*dtnm1**2 + 4*dtn*dtnm1*dtnm2 + 2*dtn*dtnm2**2 + dtnm1**3 + 3*dtnm1**2*dtnm2 + 3*dtnm1*dtnm2**2 + dtnm2**3) + dtn*dtnm1*dtnm2*dynp1*(
+                dtn**2*dtnm1 + dtn**2*dtnm2 + 2*dtn*dtnm1**2 + 3*dtn*dtnm1*dtnm2 + dtn*dtnm2**2 + dtnm1**3 + 2*dtnm1**2*dtnm2 + dtnm1*dtnm2**2) + dtnm2*yn*(
+                dtn**4 + 4*dtn**3*dtnm1 + 2*dtn**3*dtnm2 + 6*dtn**2*dtnm1**2 + 6*dtn**2*dtnm1*dtnm2 + dtn**2*dtnm2**2 + 4*dtn*dtnm1**3 + 6*dtn*dtnm1**2*dtnm2 + 2*dtn*dtnm1*dtnm2**2 + dtnm1**4 + 2*dtnm1**3*dtnm2 + dtnm1**2*dtnm2**2))/(
+            dtnm1*dtnm2*(
+                3*dtn**2*dtnm1 + 3*dtn**2*dtnm2 + 4*dtn*dtnm1**2 + 6*dtn*dtnm1*dtnm2 + 2*dtn*dtnm2**2 + dtnm1**3 + 2*dtnm1**2*dtnm2 + dtnm1*dtnm2**2))
+    )
 
 
 def ebdf3_step_wrapper(ts, ys, dyn):
@@ -631,7 +631,15 @@ def ebdf3_step(dtn, yn, dyn, dtnm1, ynm1, dtnm2, ynm2):
 
     Code is generated using sym-bdf3.py.
     """
-    return -(dyn*(-dtn**3*dtnm1**2*dtnm2 - dtn**3*dtnm1*dtnm2**2 - 2*dtn**2*dtnm1**3*dtnm2 - 3*dtn**2*dtnm1**2*dtnm2**2 - dtn**2*dtnm1*dtnm2**3 - dtn*dtnm1**4*dtnm2 - 2*dtn*dtnm1**3*dtnm2**2 - dtn*dtnm1**2*dtnm2**3) + yn*(2*dtn**3*dtnm1*dtnm2 + dtn**3*dtnm2**2 + 3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + dtn**2*dtnm2**3 - dtnm1**4*dtnm2 - 2*dtnm1**3*dtnm2**2 - dtnm1**2*dtnm2**3) + ynm1*(-dtn**3*dtnm1**2 - 2*dtn**3*dtnm1*dtnm2 - dtn**3*dtnm2**2 - dtn**2*dtnm1**3 - 3*dtn**2*dtnm1**2*dtnm2 - 3*dtn**2*dtnm1*dtnm2**2 - dtn**2*dtnm2**3) + ynm2*(dtn**3*dtnm1**2 + dtn**2*dtnm1**3))/(dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)
+    return (
+        -(
+            dyn*(
+                -dtn**3*dtnm1**2*dtnm2 - dtn**3*dtnm1*dtnm2**2 - 2*dtn**2*dtnm1**3*dtnm2 - 3*dtn**2*dtnm1**2*dtnm2**2 - dtn**2*dtnm1*dtnm2**3 - dtn*dtnm1**4*dtnm2 - 2*dtn*dtnm1**3*dtnm2**2 - dtn*dtnm1**2*dtnm2**3) + yn*(
+                2*dtn**3*dtnm1*dtnm2 + dtn**3*dtnm2**2 + 3*dtn**2*dtnm1**2*dtnm2 + 3*dtn**2*dtnm1*dtnm2**2 + dtn**2*dtnm2**3 - dtnm1**4*dtnm2 - 2*dtnm1**3*dtnm2**2 - dtnm1**2*dtnm2**3) + ynm1*(
+                -dtn**3*dtnm1**2 - 2*dtn**3*dtnm1*dtnm2 - dtn**3*dtnm2**2 - dtn**2*dtnm1**3 - 3*dtn**2*dtnm1**2*dtnm2 - 3*dtn**2*dtnm1*dtnm2**2 - dtn**2*dtnm2**3) + ynm2*(
+                dtn**3*dtnm1**2 + dtn**2*dtnm1**3))/(
+            dtnm1**4*dtnm2 + 2*dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)
+    )
 
 
 def ebdf3_dynm1_step(ts, ys, dynm1):
@@ -643,7 +651,39 @@ def ebdf3_dynm1_step(ts, ys, dynm1):
     ynm1 = ys[-3]
     ynm2 = ys[-4]
 
-    return dynm1*(-dtn**3*dtnm1**2*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4*dtnm2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + yn*(dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm1*(dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn*dtnm1**2*dtnm2**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1*dtnm2**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm2*(-dtn**3*dtnm1**2/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4/(dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3))
+    return (
+        dynm1*(
+            -dtn**3*dtnm1**2*dtnm2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm1*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3*dtnm2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1**2*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm1*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4*dtnm2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1**3*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**2*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + yn*(
+            dtn**3*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn**2*dtnm1*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn**2*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 3*dtn*dtnm1**2*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn*dtnm1*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**3*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtnm1**2*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm1*(
+            dtn**3*dtnm1**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**3*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + 2*dtn**2*dtnm1**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn**2*dtnm1*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn**2*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) + dtn*dtnm1**4/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 3*dtn*dtnm1**2*dtnm2**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn*dtnm1*dtnm2**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3)) + ynm2*(
+            -dtn**3*dtnm1**2/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - 2*dtn**2*dtnm1**3/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3) - dtn*dtnm1**4/(
+                dtnm1**3*dtnm2**2 + dtnm1**2*dtnm2**3))
+    )
 
 
 def imr_residual(base_residual, ts, ys):
@@ -673,8 +713,8 @@ def interpolate_dyn(ts, ys):
 
     # double check steps match
     imr_ts = map(lambda tn, tnp1: (tn + tnp1)/2, ts[1:], ts[:-1])
-    imr_dys = map(lambda dt, ynp1, yn: (ynp1 -yn)/dt,
-                       dts, ynp1_list, yn_list)
+    imr_dys = map(lambda dt, ynp1, yn: (ynp1 - yn)/dt,
+                  dts, ynp1_list, yn_list)
 
     dyn = (sp.interpolate.barycentric_interpolate
            (imr_ts, imr_dys, ts[-2]))
@@ -731,7 +771,11 @@ def bdf3_dydt(ts, ys):
     ynm1 = ys[-3]
     ynm2 = ys[-4]
 
-    return dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
+    return (
+        dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1)) /
+        (dtn + dtnm1 + dtnm2) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn) /
+        (dtn + dtnm1) + (ynp1 - yn)/dtn
+    )
 
 
 def bdf4_dydt(ts, ys):
@@ -751,8 +795,10 @@ def bdf4_dydt(ts, ys):
     ynm2 = ys[-4]
     ynm3 = ys[-5]
 
-
-    return dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(dtn + dtnm1)*((-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) - (-(-(ynm2 - ynm3)/dtnm3 + (ynm1 - ynm2)/dtnm2)/(dtnm2 + dtnm3) + (-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2))/(dtnm1 + dtnm2 + dtnm3))*(dtn + dtnm1 + dtnm2)/(dtn + dtnm1 + dtnm2 + dtnm3) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
+    return (
+        dtn*(dtn + dtnm1)*(-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1))/(dtn + dtnm1 + dtnm2) + dtn*(dtn + dtnm1)*((-(-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2) + (-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1)) /
+                                                                                                                                                                                          (dtn + dtnm1 + dtnm2) - (-(-(ynm2 - ynm3)/dtnm3 + (ynm1 - ynm2)/dtnm2)/(dtnm2 + dtnm3) + (-(ynm1 - ynm2)/dtnm2 + (yn - ynm1)/dtnm1)/(dtnm1 + dtnm2))/(dtnm1 + dtnm2 + dtnm3))*(dtn + dtnm1 + dtnm2)/(dtn + dtnm1 + dtnm2 + dtnm3) + dtn*(-(yn - ynm1)/dtnm1 + (ynp1 - yn)/dtn)/(dtn + dtnm1) + (ynp1 - yn)/dtn
+    )
 
 
 bdf2_residual = par(bdf_residual, dydt_func=bdf2_dydt)
@@ -763,6 +809,7 @@ bdf4_residual = par(bdf_residual, dydt_func=bdf4_dydt)
 # Assumption: we never actually undo a timestep (otherwise dys will become
 # out of sync with ys).
 class TrapezoidRuleResidual(object):
+
     """A class to calculate trapezoid rule residuals.
 
     We need a class because we need to store the past data. Other residual
@@ -1060,11 +1107,10 @@ def imr_jacobian_ab_time_adaptor(ts, ys, target_error, dfdy_function=None):
     return scale_timestep(dt_n, target_error, error_norm, 3)
 
 
-
 def imr_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
-                             ab_start_point='t_n',
-                             explicit_derivative=None,
-                             fudge_factor=1.0):
+                        ab_start_point='t_n',
+                        explicit_derivative=None,
+                        fudge_factor=1.0):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -1100,7 +1146,7 @@ def imr_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
     # some derivatives. This WONT WORK with some of the weirder
     # settings.... Should fix it.. ??ds
     else:
-        assert(ab_start_point=='t_n')
+        assert(ab_start_point == 't_n')
         # assert(interpolator==par(my_interpolate, n_interp=2))
 
         # dy_nph = explicit_derivative(t_nph)
@@ -1111,18 +1157,17 @@ def imr_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
         dy_np1 = explicit_derivative(ts[-1], y_np1_MP)
 
         # Just interpolate value + derivative at t_nph
-        interps = krogh_interpolate([ts[-4], t_nm1, t_nm1, t_n, t_n,], # input ts
-                                    [ys[-4], y_nm1_MP, dy_nm1, y_n_MP, dy_n,], # inputs ys
-                                    [t_nph], der=[0, 1]) # outputs wanted
+        interps = krogh_interpolate([ts[-4], t_nm1, t_nm1, t_n, t_n, ],  # input ts
+                                    # inputs ys
+                                    [ys[-4], y_nm1_MP, dy_nm1, y_n_MP, dy_n, ],
+                                    [t_nph], der=[0, 1])  # outputs wanted
 
         y_nph = interps[0][0]
         dy_nph = interps[1][0]
 
-
     # Calculate this part of the truncation error (see notes)
     # ymid_estimation_error = dt_n*dy_nph + y_n_MP - y_np1_MP
     ymid_estimation_error = dt_n*(dy_nph - dy_nmid)
-
 
     # Use an AB2 predictor to eliminate the dddy_nph term
     # ============================================================
@@ -1140,19 +1185,16 @@ def imr_ab_lte_estimate(ts, ys, interpolator=my_interpolate,
         err = "Don't recognise ab_start_point value "+str(ab_start_point)
         raise ValueError(err)
 
-
     y_np1_AB2 = ab2_step(AB_dt_n, y_nph, dy_nph,
                          AB_dt_nm1, AB_dy_start)
 
-
     # Get the truncation error, scaling factor and new time step size
     # ============================================================
-
     # Calculate with a choice of start points (see notes)
     if ab_start_point == 't_nmh':
         p = -4 / (1 + 3/dtr)
         imr_lte = ymid_estimation_error + \
-          p * (y_np1_AB2 - y_np1_MP - ymid_estimation_error)
+            p * (y_np1_AB2 - y_np1_MP - ymid_estimation_error)
 
     elif ab_start_point == 't_n':
         imr_lte = 4*(y_np1_MP - y_np1_AB2) + 5*ymid_estimation_error
@@ -1193,7 +1235,7 @@ def ebdf3_dynm1_lte_estimate(ts, ys, dydt_func=None):
     else:
         dynm1 = dydt_func(ts[-3], ys[-3])
 
-        # # debugging ??ds
+        # debugging ??ds
         # dtn = ts[-1] - ts[-2]
         # err_margin = 25* dtn**2
         # est_dynm1 = (imr_dydt(ts[:-1], ys[:-1]) - imr_dydt(ts[:-2], ys[:-2]))/2
@@ -1209,7 +1251,7 @@ def ebdf3_dynm1_lte_estimate(ts, ys, dydt_func=None):
 
 
 def imr_fe_ab_time_adaptor(ts, ys, target_error,
-                                interpolator=my_interpolate):
+                           interpolator=my_interpolate):
     """ See notes: 19-20/3/2013 for algebra and explanations.
     """
 
@@ -1262,7 +1304,7 @@ def imr_fe_ab_time_adaptor(ts, ys, target_error,
 
     # Calculate the lte (see notes for why this equation)
     imr_lte = (omega_n * (y_np1_MP - y_np1_AB2)
-                    + ((omega_n - 1)/2) * (y_np1_FEc - y_np1_MP))
+               + ((omega_n - 1)/2) * (y_np1_FEc - y_np1_MP))
 
     # Get a norm
     error_norm = sp.linalg.norm(sp.array(imr_lte, ndmin=1), 2)
@@ -1387,7 +1429,6 @@ def test_bad_timestep_handling():
     utils.assert_list_almost_equal(ys, map(exp3_exact, ts), overall_tol)
 
 
-
 def test_ab2():
 
     def check_explicit_stepper(stepper, exact_symb):
@@ -1400,7 +1441,6 @@ def test_ab2():
 
         exact_ys = map(exact, ts)
         utils.assert_list_almost_equal(ys, exact_ys, 1e-4)
-
 
     t = sympy.symbols('t')
     functions = [2*t**2,
@@ -1509,9 +1549,9 @@ def test_adaptive_dt():
     methods = [('bdf2 mp', 1e-4),
                # ('imr fe ab', 1e-4),
                # ('imr ab', 1e-4),
-               ('imr ebdf3', 1e-5), # test with and without explicit f
-               ({'label':'imr ebdf3'}, 1e-5),
-               ({'label':'tr ab'}, 1e-4),
+               ('imr ebdf3', 1e-5),  # test with and without explicit f
+               ({'label': 'imr ebdf3'}, 1e-5),
+               ({'label': 'tr ab'}, 1e-4),
                ]
 
     functions = [(exp_residual, exp, exp_dydt),
@@ -1554,7 +1594,7 @@ def test_sharp_dt_change():
 #     """Check that imr fe ab works well for stiff problem (i.e. has a
 #     non-insane number of time steps).
 #     """
-#     # Slow test!
+# Slow test!
 
 #     mu = 1000
 #     residual = par(van_der_pol_residual, mu=mu)
@@ -1583,6 +1623,7 @@ def test_newton():
     for res, exact in tests:
         check_newton(res, exact)
 
+
 def test_symbolic_compare_step_time_residual():
 
     # Define the symbols we need
@@ -1592,7 +1633,8 @@ def test_symbolic_compare_step_time_residual():
     Sdys = sympy.symbols('dy0:9')
 
     # Generate the stuff needed to run the residual
-    def fake_eqn_residual(ts, ys, dy): return Sdys[0] - dy
+    def fake_eqn_residual(ts, ys, dy):
+        return Sdys[0] - dy
     fake_ts = utils.dts2ts(St, Sdts[::-1])
     fake_ys = Sys[::-1]
 
@@ -1605,7 +1647,7 @@ def test_symbolic_compare_step_time_residual():
     utils.assert_sym_eq(res_bdf2_step[0], step_result_bdf2)
 
 
-    # # Check bdf3 -- ??ds too complex..
+    # Check bdf3 -- ??ds too complex..
     # step_result_bdf3 = ibdf3_step(Sdts[0], Sys[1], Sdys[0], Sdts[1], Sys[2],
     #                               Sdts[2], Sys[3])
     # res_bdf3_result_bdf3 = bdf3_residual(fake_eqn_residual, fake_ts, fake_ys)
@@ -1620,7 +1662,7 @@ def test_get_ltes_from_data():
     # Generate results
     dt = 0.01
     ys, ts = odeint(exp_residual, [exp(0.0)], tmax=0.5, dt=dt,
-                            method="bdf2")
+                    method="bdf2")
 
     # Generate ltes
     ltes = get_ltes_from_data(ts, ys, bdf2_mp_lte_estimate)

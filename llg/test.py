@@ -26,6 +26,7 @@ import simpleode.llg.llg as llg
 # ============================================================
 
 class MallinsonSolverCheckerBase():
+
     """Base class to define the test functions but not actually run them.
     """
 
@@ -40,7 +41,8 @@ class MallinsonSolverCheckerBase():
         (self.sphs, self.times) = mlsn.generate_dynamics(
             self.mag_params, steps=steps)
 
-        def f(sph): energy.llg_state_energy(sph, self.mag_params)
+        def f(sph):
+            energy.llg_state_energy(sph, self.mag_params)
         self.energys = map(f, self.sphs)
 
     # Monotonically increasing time
@@ -68,7 +70,7 @@ class MallinsonSolverCheckerBase():
         a3s = energy.recompute_alpha_list(self.sphs, self.times,
                                           self.mag_params,
                                           energy.recompute_alpha_varying_fields)
-        utils.assert_list_almost_equal( a2s, a3s, (1.1/len(self.times)))
+        utils.assert_list_almost_equal(a2s, a3s, (1.1/len(self.times)))
         # one of the examples doesn't quite pass with tol=1.0/len, so use
         # 1.1
 
@@ -84,15 +86,16 @@ class MallinsonSolverCheckerBase():
     test_damping_self_consistency.core = True
 
 
-
 # Now run the tests with various intial settings (tests are inherited from
 # the base class.
 class TestMallinsonDefaults(MallinsonSolverCheckerBase, unittest.TestCase):
+
     def setUp(self):
-        self.base_init() # steps=10000) ??ds
+        self.base_init()  # steps=10000) ??ds
 
 
 class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
+
     def setUp(self):
         mag_params = utils.MagParameters()
         mag_params.K1 = 0.6
@@ -100,28 +103,24 @@ class TestMallinsonHk(MallinsonSolverCheckerBase, unittest.TestCase):
 
 
 class TestMallinsonLowDamping(MallinsonSolverCheckerBase, unittest.TestCase):
+
     def setUp(self):
         mag_params = utils.MagParameters()
         mag_params.alpha = 0.1
-        self.base_init(mag_params) # , steps=10000) ??ds
+        self.base_init(mag_params)  # , steps=10000) ??ds
 
 
 class TestMallinsonStartAngle(MallinsonSolverCheckerBase,
                               unittest.TestCase):
+
     def setUp(self):
         self.base_init(p_start=pi/2)
 
 
-
-
-
 # llg.py
 # ============================================================
-
 # ??ds replace with substituting the exact solution into the residual and
 # checking it is zero?
-
-
 def test_llg_residuals():
     m0_sph = [0.0, pi/18]
     m0_cart = utils.sph2cart(tuple([1.0] + m0_sph))
@@ -189,12 +188,16 @@ def check_dfdm(m_cart):
                                                      m_cart, h_eff))
 
     # Calculate with function
-    dfdm_func = llg.llg_cartesian_dfdm(magnetic_parameters, t, m_cart, dmdt_cart)
+    dfdm_func = llg.llg_cartesian_dfdm(
+        magnetic_parameters,
+        t,
+        m_cart,
+        dmdt_cart)
 
     def f(t, m_cart, dmdt_cart):
         # f is the residual + dm/dt (see notes 27/2/13)
         return llg.llg_cartesian_residual(magnetic_parameters,
-                                      t, m_cart, dmdt_cart) + dmdt_cart
+                                          t, m_cart, dmdt_cart) + dmdt_cart
     # FD it
     dfdm_fd = sp.zeros((3, 3))
     r = f(t, m_cart, dmdt_cart)
@@ -212,8 +215,6 @@ def check_dfdm(m_cart):
 
     # Check the max of the difference
     utils.assert_almost_zero(sp.amax(dfdm_func - dfdm_fd), 1e-6)
-
-
 
 
 # energy.py

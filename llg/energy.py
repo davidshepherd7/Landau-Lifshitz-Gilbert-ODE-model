@@ -13,6 +13,7 @@ import simpleode.core.utils as utils
 import simpleode.llg.llg as llg
 from simpleode.llg.llg import heff
 
+
 def llg_state_energy(sph, mag_params, t=None):
     """Assuming unit volume, spatially constant, spherical particle.
 
@@ -90,7 +91,8 @@ def recompute_alpha(sph_start, sph_end, t_start, t_end, mag_params):
     return - (1/(Ms**2)) * (dEdt / dmdt_sq)
 
 
-def low_accuracy_recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_end, mag_params):
+def low_accuracy_recompute_alpha_varying_fields(
+        sph_start, sph_end, t_start, t_end, mag_params):
     """
     Compute effective damping from change in magnetisation and change in
     applied field.
@@ -114,7 +116,7 @@ def low_accuracy_recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_e
     # Finite difference derivatives
     dhadt = (mag_params.Hvec(t_start) - mag_params.Hvec(t_end))/dt
 
-    assert(all(dhadt == 0)) # no field for now
+    assert(all(dhadt == 0))  # no field for now
 
     dedt = (llg_state_energy(sph_end, mag_params, t_end)
             - llg_state_energy(sph_start, mag_params, t_start)
@@ -127,19 +129,21 @@ def low_accuracy_recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_e
     a = (-sigma + sqrt(sigma**2 - 4))/2
     b = (-sigma - sqrt(sigma**2 - 4))/2
 
-    possible_alphas2 = [a,b]
+    possible_alphas2 = [a, b]
     utils.assert_list_almost_equal(possible_alphas, possible_alphas2)
 
     print(sigma, possible_alphas)
 
-    def real_and_positive(x): return sp.isreal(x) and x > 0
+    def real_and_positive(x):
+        return sp.isreal(x) and x > 0
 
     alphas = filter(real_and_positive, possible_alphas)
     assert(len(alphas) == 1)
     return sp.real(alphas[0])
 
 
-def recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_end, mag_params):
+def recompute_alpha_varying_fields(
+        sph_start, sph_end, t_start, t_end, mag_params):
     """
     Compute effective damping from change in magnetisation and change in
     applied field.
@@ -172,10 +176,11 @@ def recompute_alpha_varying_fields(sph_start, sph_end, t_start, t_end, mag_param
     # print(sp.dot(m_cart_end, dhadt), dedt)
 
     # Calculate alpha itself using the forumla derived in notes
-    alpha = ( (dedt - sp.dot(m_cart_end, dhadt))
-               /(sp.dot(h_eff_end, sp.cross(m_cart_end, dmdt))))
+    alpha = ((dedt - sp.dot(m_cart_end, dhadt))
+             / (sp.dot(h_eff_end, sp.cross(m_cart_end, dmdt))))
 
     return alpha
+
 
 def recompute_alpha_varying_fields_at_midpoint(sph_start, sph_end,
                                                t_start, t_end, mag_params):
@@ -196,7 +201,8 @@ def recompute_alpha_varying_fields_at_midpoint(sph_start, sph_end,
     # Get some values
     dt = t_end - t_start
     t = (t_end + t_start)/2
-    m = (sp.array(utils.sph2cart(sph_end)) + sp.array(utils.sph2cart(sph_start)))/2
+    m = (sp.array(utils.sph2cart(sph_end))
+         + sp.array(utils.sph2cart(sph_start)))/2
 
     h_eff = heff(mag_params, t, m)
     mxh = sp.cross(m, h_eff)
@@ -215,8 +221,8 @@ def recompute_alpha_varying_fields_at_midpoint(sph_start, sph_end,
     # print(sp.dot(m_cart_end, dhadt), dedt)
 
     # Calculate alpha itself using the forumla derived in notes
-    alpha = -( (dedt + sp.dot(m, dhadt))
-               /(sp.dot(h_eff, sp.cross(m, dmdt))))
+    alpha = -((dedt + sp.dot(m, dhadt))
+              / (sp.dot(h_eff, sp.cross(m, dmdt))))
 
     return alpha
 

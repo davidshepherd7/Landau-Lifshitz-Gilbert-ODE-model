@@ -66,7 +66,8 @@ def parallel_parameter_sweep(function, parameter_lists, serial_mode=False):
     else:
         # Run in all parameter sets in parallel
         pool = multiprocessing.Pool()
-        results_iterator = pool.imap_unordered(wrapped_function, parameter_sets)
+        results_iterator = pool.imap_unordered(
+            wrapped_function, parameter_sets)
         pool.close()
 
         # wait for everything to finish
@@ -91,7 +92,8 @@ def partial_lists(l, min_list_length=1):
     return filter(lambda x: len(x) >= min_list_length, all_lists)
 
 
-def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-writeup/images"):
+def myfigsave(
+        figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-writeup/images"):
     """Fix up layout and save a pdf of an image into my latex folder.
     """
 
@@ -106,6 +108,7 @@ def myfigsave(figure, name, texpath="/home/david/Dropbox/phd/reports/ongoing-wri
     print "Saved to", figpath
     return
 
+
 def memoize(f):
     """ Memoization decorator for a function taking multiple arguments.
 
@@ -113,10 +116,13 @@ def memoize(f):
     (in the comments)
     """
     class memodict(dict):
+
         def __init__(self, f):
             self.f = f
+
         def __call__(self, *args):
             return self[args]
+
         def __missing__(self, key):
             ret = self[key] = self.f(*key)
             return ret
@@ -244,9 +250,11 @@ def assert_same_order_of_magnitude(a, b, fp_zero=1e-14):
     with log10).
     """
     if abs(a) < fp_zero:
-        assert abs(b) < fp_zero or (sp.log10(abs(b)) - sp.log10(abs(fp_zero)) < 1)
+        assert abs(b) < fp_zero or (
+            sp.log10(abs(b)) - sp.log10(abs(fp_zero)) < 1)
     if abs(b) < fp_zero:
-        assert abs(a) < fp_zero or (sp.log10(abs(a)) - sp.log10(abs(fp_zero)) < 1)
+        assert abs(a) < fp_zero or (
+            sp.log10(abs(a)) - sp.log10(abs(fp_zero)) < 1)
     else:
         assert (abs(sp.log10(abs(a)) - sp.log10(abs(b))) < 1)
 
@@ -291,7 +299,7 @@ def symb2functions(exact_symb):
     t, y, Dy = sympy.symbols('t y Dy')
     exact = sympy.lambdify(t, exact_symb)
     residual = symb2residual(exact_symb)
-    dys = [None]+map(par(symb2deriv, exact_symb), range(1,10))
+    dys = [None]+map(par(symb2deriv, exact_symb), range(1, 10))
     jacobian = symb2jacobian(exact_symb)
     return exact, residual, dys, jacobian
 
@@ -412,7 +420,7 @@ def plot_polar_vs_time(sphs, times, title='Polar angle vs time'):
 class MagParameters():
 
     def Hvec(self, t):
-        return sp.array([0,0,-2])
+        return sp.array([0, 0, -2])
 
     gamma = 1.0
     K1 = 0.0
@@ -420,18 +428,14 @@ class MagParameters():
     mu0 = 1.0
     easy_axis = sp.array([0, 0, 1])
 
-
     def __init__(self, alpha=1.0):
         self.alpha = alpha
-
 
     def dimensional_H(self, t):
         return sp.linalg.norm(self.Hvec(t), ord=2)
 
-
     def H(self, t):
         return sp.linalg.norm(self.Hvec(t)/self.Ms, ord=2)
-
 
     def dimensional_Hk(self):
         """Ansiotropy field strength."""
@@ -439,25 +443,24 @@ class MagParameters():
         # need extra factor of Ms on bottom...
         return (2 * self.K1) / (self.mu0 * self.Ms)
 
-
     def Hk(self):
         """Ansiotropy field strength."""
         # ??ds if m is always unit vector then this is right, if not we
         # need extra factor of Ms on bottom...
         return self.dimensional_Hk() / self.Ms
 
-
     def dimensional_Hk_vec(self, m_cart):
         """Uniaxial anisotropy field. Magnetisation should be in normalised
         cartesian form."""
-        return self.dimensional_Hk() * sp.dot(m_cart, self.easy_axis) * self.easy_axis
-
+        return (
+            self.dimensional_Hk() * sp.dot(
+                m_cart, self.easy_axis) * self.easy_axis
+        )
 
     def Hk_vec(self, m_cart):
         """Normalised uniaxial anisotropy field. Magnetisation should be in
         normalised cartesian form."""
         return self.dimensional_Hk_vec(m_cart) / self.Ms
-
 
     def __repr__(self):
         """Return a string representation of the parameters.

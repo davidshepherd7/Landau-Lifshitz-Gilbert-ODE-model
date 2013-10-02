@@ -18,29 +18,29 @@ import simpleode.core.ode as ode
 # def llg_spherical_residual(magnetic_parameters, t, m_sph, dmdt_sph):
 #     """ Calculate the residual for a guess at dmdt.
 #     """
-#     # Extract the parameters
+# Extract the parameters
 #     alpha = magnetic_parameters.alpha
 #     gamma = magnetic_parameters.gamma
 #     Ms = magnetic_parameters.Ms
 #     H, hazi, hpol = utils.cart2sph(magnetic_parameters.Hvec)
 
-#     # Ensure that the angles are in the correct range
-#     # ??ds improve
+# Ensure that the angles are in the correct range
+# ??ds improve
 #     _, mazi, mpol = utils.cart2sph(utils.sph2cart([Ms, m_sph[0], m_sph[1]]))
 
 #     dmazidt = dmdt_sph[0]
 #     dmpoldt = dmdt_sph[1]
 
-#     # Calculate fields:
-#     # no exchange, no Hms for now
-#     # anisotropy:
-#     # dEdmazi = 0
-#     # dEdmpol = -k1 * 2 * sin(pol) * cos(pol)
+# Calculate fields:
+# no exchange, no Hms for now
+# anisotropy:
+# dEdmazi = 0
+# dEdmpol = -k1 * 2 * sin(pol) * cos(pol)
 
 #     if hazi < 0. or hazi > 2*pi or mazi < 0. or mazi > 2*pi:
 #         raise ValueError
 
-#     # Zeeman: ??ds minus sign?
+# Zeeman: ??ds minus sign?
 #     if (mazi - hazi) == 0:
 #         dEdmazi = 0.
 #     else:
@@ -53,9 +53,9 @@ import simpleode.core.ode as ode
 
 #     print abs(mazi - hazi), abs(mpol - hpol)
 
-#     # From Nonlinear Magnetization Dynamics in Nanosystems By Isaak
-#     # D. Mayergoyz, Giorgio Bertotti, Claudio Serpico pg. 39 with theta =
-#     # polar angle, phi = azimuthal angle.
+# From Nonlinear Magnetization Dynamics in Nanosystems By Isaak
+# D. Mayergoyz, Giorgio Bertotti, Claudio Serpico pg. 39 with theta =
+# polar angle, phi = azimuthal angle.
 #     residual = sp.empty((2))
 #     residual[0] = dmpoldt + (alpha * sin(mpol) * dmazidt) \
 #         + (gamma/Ms) * (1.0/sin(mpol)) * dEdmazi
@@ -67,7 +67,8 @@ import simpleode.core.ode as ode
 
 def heff(magnetic_parameters, t, m_cart):
     Hk_vec = magnetic_parameters.Hk_vec(m_cart)
-    h_eff = magnetic_parameters.Hvec(t) + Hk_vec # - ((1.0/3)*sp.array(m_cart))
+    # - ((1.0/3)*sp.array(m_cart))
+    h_eff = magnetic_parameters.Hvec(t) + Hk_vec
 
     return h_eff
 
@@ -104,7 +105,10 @@ def ll_dmdt(magnetic_parameters, t, m):
     alpha = magnetic_parameters.alpha
     h_eff = heff(magnetic_parameters, t, m)
 
-    return -1/(1 + alpha**2) *(sp.cross(m, h_eff) + alpha*sp.cross(m, sp.cross(m, h_eff)))
+    return (
+        -1/(1 + alpha**2) * (sp.cross(m, h_eff)
+                             + alpha*sp.cross(m, sp.cross(m, h_eff)))
+    )
 
 
 def ll_residual(magnetic_parameters, t, m, dmdt):
@@ -115,18 +119,21 @@ def simple_llg_residual(t, m, dmdt):
     mp = utils.MagParameters()
     return llg_cartesian_residual(mp, t, m, dmdt)
 
+
 def simple_llg_initial(*_):
     return utils.sph2cart([1.0, 0.0, sp.pi/18])
 
 
 def linear_H(t):
-    return sp.array([0,0,-0.5*t])
+    return sp.array([0, 0, -0.5*t])
+
 
 def ramping_field_llg_residual(t, m, dmdt):
     mp = utils.MagParameters()
     mp.Hvec = linear_H
     mp.alpha = 0.1
     return llg_cartesian_residual(mp, t, m, dmdt)
+
 
 def ramping_field_llg_initial(*_):
     return utils.sph2cart([1.0, 0.0, sp.pi/18])
