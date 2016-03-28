@@ -4,22 +4,28 @@ Python LLG ODE solver for experimenting with timesteppers
 Setup
 --------
 
-Required python modules: scipy, matplotlib.
+Required python modules: scipy, matplotlib, sympy.
 
-Get with
+Clone into a directory named simpleode with the command:
 
-    git clone https://github.com/davidshepherd7/Landau-Lifshitz-Gilbert-ODE-model.git
+    git clone https://github.com/davidshepherd7/Landau-Lifshitz-Gilbert-ODE-model.git simpleode
+    
+Note that the name of the directory *must* be simpleode for the import statements to work. Next add the directory *containing* the simpleode directory to your python path with:
 
-No compilation/installation required.
+    export PYTHONPATH="$PYTHONPATH:[path/to/simpleode/../]"
+    
+you probably want to put this in your shell rc file so that it is set permenantly.
+
+Apologies for the convoluted setup, I wrote this code when I was fairly new to python and I didn't follow proper packaging practices.
 
 Testing
 ---------
 
 Run self tests with
 
-    nosetests --all-modules.
-
-(requires the nose package:
+    nosetests --all-modules
+    
+in the simplellg directory (this requires the nose package:
 
     sudo apt-get install python-nose
 
