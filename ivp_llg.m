@@ -1,4 +1,4 @@
-%% This file contains a MATLAB reproduction of some ofthe python-based
+%% This file contains a MATLAB reproduction of some of the python-based
 %% experiments in this repository.
 
 %% Author: Milan Mihajlovic (http://www.cs.man.ac.uk/~milan/)
